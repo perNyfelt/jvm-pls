@@ -2,13 +2,16 @@ package test.alipsa.jvmpls.java;
 
 import org.junit.jupiter.api.Test;
 import se.alipsa.jvmpls.core.model.CompletionItem;
+import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.model.Position;
 import se.alipsa.jvmpls.core.server.CoreServer;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -69,28 +72,36 @@ class JavaPluginCompletionsTest {
 
     Path main = dir.resolve("Main.java");
     String mainCode = """
-      package demo;
-      import thing.*;
-      class Main {
-        void m() {
-          thing.Ba/*caret*/
-        }
+    package demo;
+    import thing.*;
+    class Main {
+      void m() {
+        thing.Ba/*caret*/
       }
-      """;
+    }
+    """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
-    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+    // capture diags
+    var diags = new ConcurrentHashMap<String, List<Diagnostic>>();
+    try (CoreServer server = CoreServer.createDefault((uri, ds) ->
+        diags.computeIfAbsent(uri, k -> new ArrayList<>()).addAll(ds))) {
       server.openFile(bananaUri, bananaCode);
       server.openFile(mainUri,   mainCode);
 
-      Position pos = positionAtMarker(mainCode, "/*caret*/");
-      List<CompletionItem> items = server.completions(mainUri, pos);
+      // ASSERT: no diagnostics for a well-formed support file
+      assertTrue(diags.getOrDefault(bananaUri, List.of()).isEmpty(),
+          "Banana.java should index without diagnostics");
 
+      // completions should still work
+      Position pos = positionAtMarker(mainCode, "/*caret*/");
+      var items = server.completions(mainUri, pos);
       assertTrue(containsLabel(items, "Banana"),
           "Expected 'Banana' when typing dotted prefix 'thing.Ba'");
     }
   }
+
 
   // ---------- helpers ----------
 

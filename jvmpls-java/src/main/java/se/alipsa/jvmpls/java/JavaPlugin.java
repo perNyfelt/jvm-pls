@@ -23,8 +23,10 @@ public final class JavaPlugin implements JvmLangPlugin {
   private static final java.util.regex.Pattern PKG =
       java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
   private static final java.util.regex.Pattern IMPORT =
-      java.util.regex.Pattern.compile("(?m)^\\s*import\\s+([\\w.]+)\\s*;");
+      java.util.regex.Pattern.compile("(?m)^\\s*import(?:\\s+static)?\\s+([\\w.]+)\\s*;");
   private static final List<String> JAVA_DEFAULT_STAR_IMPORTS = List.of("java.lang");
+  private static final java.util.regex.Pattern IMPORT_WITH_ALIAS =
+      java.util.regex.Pattern.compile("(?m)^\\s*import(?:\\s+static)?\\s+([\\w.]+)(?:\\s+as\\s+(\\w+))?\\s*$");
 
   @Override public String id() { return "java"; }
   @Override public Set<String> fileExtensions() { return Set.of("java"); }
@@ -38,18 +40,23 @@ public final class JavaPlugin implements JvmLangPlugin {
       JavaFileObject mem = new SimpleJavaFileObject(URI.create(fileUri), JavaFileObject.Kind.SOURCE) {
         @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) { return content; }
       };
-      var options = List.of("-proc:none", "-source", "21");
-      JavacTask task = (JavacTask) COMPILER.getTask(null, fm, null, options, null, List.of(mem));
+
+      var options   = List.of("-proc:none", "-source", "21");
+      var sink      = new java.io.StringWriter();        // swallow compiler output
+      var pw        = new java.io.PrintWriter(sink);
+      var collector = new javax.tools.DiagnosticCollector<JavaFileObject>();
+
+      JavacTask task = (JavacTask) COMPILER.getTask(pw, fm, collector, options, null, List.of(mem));
       Trees trees = Trees.instance(task);
 
       for (CompilationUnitTree cu : task.parse()) {
         String pkg = cu.getPackageName() == null ? "" : cu.getPackageName().toString();
         if (!pkg.isEmpty()) {
-          reporter.reportPackage(pkg, new Location(fileUri, new Range(new Position(0,0), new Position(0,1))));
+          reporter.reportPackage(pkg, new Location(fileUri, new Range(new Position(0, 0), new Position(0, 1))));
         }
 
         cu.accept(new TreeScanner<Void, Void>() {
-          String owner;
+          String owner; // current enclosing FQN
 
           @Override public Void visitClass(ClassTree node, Void p) {
             String simple = node.getSimpleName().toString();
@@ -60,7 +67,15 @@ public final class JavaPlugin implements JvmLangPlugin {
               boolean isAnno      = node.getKind() == Tree.Kind.ANNOTATION_TYPE;
 
               reporter.reportClass(fqn, new Location(fileUri, toRange(cu, node, trees)), isInterface, isEnum, isAnno);
+
+              // descend with this owner and restore afterwards (handles nested types)
+              String prev = owner;
               owner = fqn;
+              try {
+                return super.visitClass(node, p);
+              } finally {
+                owner = prev;
+              }
             }
             return super.visitClass(node, p);
           }
@@ -70,19 +85,20 @@ public final class JavaPlugin implements JvmLangPlugin {
               reporter.reportMethod(owner, node.getName().toString(), methodSig(node),
                   new Location(fileUri, toRange(cu, node, trees)));
             }
-            return null;
+            return super.visitMethod(node, p);
           }
 
           @Override public Void visitVariable(VariableTree node, Void p) {
             if (owner != null && node.getName() != null) {
-              String type = node.getType() == null ? "java.lang.Object" : node.getType().toString();
+              String type = (node.getType() == null) ? "java.lang.Object" : node.getType().toString();
               reporter.reportField(owner, node.getName().toString(), type,
                   new Location(fileUri, toRange(cu, node, trees)));
             }
-            return null;
+            return super.visitVariable(node, p);
           }
         }, null);
       }
+
     } catch (IOException e) {
       out.add(new Diagnostic(new Range(new Position(0,0), new Position(0,1)),
           "IO while parsing: " + e.getMessage(), Diagnostic.Severity.ERROR, id(), "io"));
@@ -93,13 +109,18 @@ public final class JavaPlugin implements JvmLangPlugin {
     return out;
   }
 
+
+
   @Override
   public SymbolInfo resolveSymbol(String fileUri, String symbolName, CoreQuery core) {
     if (symbolName == null || symbolName.isBlank()) return null;
 
     // If it looks like an FQN, try directly.
-    if (symbolName.indexOf('.') >= 0) {
-      return core.findByFqn(symbolName).orElse(null);
+    int dot = symbolName.indexOf('.');
+    if (dot >= 0) {
+      var direct = core.findByFqn(symbolName);
+      if (direct.isPresent()) return direct.get();
+      symbolName = symbolName.substring(0, dot); // use leftmost identifier
     }
 
     // Use cached source to infer package/imports.
@@ -155,41 +176,44 @@ public final class JavaPlugin implements JvmLangPlugin {
     String prefix = completionPrefix(content, position); // may include dots
     var out = new java.util.LinkedHashMap<String, CompletionItem>(); // fqName -> item
 
-    // Dotted prefix => treat as explicit package prefix
+    // 1) Dotted prefix => collect by explicit package
     int lastDot = prefix.lastIndexOf('.');
     if (lastDot >= 0) {
       String pkg = prefix.substring(0, lastDot);
       String simplePrefix = prefix.substring(lastDot + 1);
-      collectTypesFromPackage(core, pkg, simplePrefix, out);
-      return List.copyOf(out.values());
+      collectTypesFromPackage(core, pkg, simplePrefix, content, out);
     }
 
-    // Undotted: same package + imports + defaults
-    String pkg = find(PKG, content); // you already have PKG & IMPORT patterns
+    // 2) Undotted OR fallback: visible types (same pkg + imports + defaults)
+    String simplePrefix = (lastDot >= 0) ? prefix.substring(lastDot + 1) : prefix;
+
+    String pkg = find(PKG, content); // your existing pattern for `package ...;`
     if (pkg != null && !pkg.isBlank()) {
-      collectTypesFromPackage(core, pkg, prefix, out);
+      collectTypesFromPackage(core, pkg, simplePrefix, content, out);
     }
 
-    // imports
-    var m = IMPORT.matcher(content);
+    var m = IMPORT.matcher(content); // your existing `import ...;` pattern
     while (m.find()) {
       String imp = m.group(1);
       if (imp.endsWith(".*")) {
-        collectTypesFromPackage(core, imp.substring(0, imp.length() - 2), prefix, out);
+        collectTypesFromPackage(core, imp.substring(0, imp.length() - 2), simplePrefix, content, out);
       } else {
         core.findByFqn(imp).ifPresent(sym -> {
-          if (isType(sym) && simpleName(sym.getFqName()).startsWith(prefix)) add(out, sym);
+          if (isType(sym) && simpleName(sym.getFqName()).startsWith(simplePrefix)) {
+            add(out, sym, content);
+          }
         });
       }
     }
 
-    // defaults
+    // Defaults (java.lang)
     for (String p : JAVA_DEFAULT_STAR_IMPORTS) {
-      collectTypesFromPackage(core, p, prefix, out);
+      collectTypesFromPackage(core, p, simplePrefix, content, out);
     }
 
     return List.copyOf(out.values());
   }
+
 
   private static Range toRange(CompilationUnitTree cu, Tree node, Trees trees) {
     LineMap lm = cu.getLineMap();
@@ -230,25 +254,28 @@ public final class JavaPlugin implements JvmLangPlugin {
     };
   }
 
-  private static void add(java.util.Map<String, CompletionItem> out, SymbolInfo s) {
+  private static void collectTypesFromPackage(CoreQuery core, String pkg, String simplePrefix,
+                                              String content,
+                                              java.util.Map<String, CompletionItem> out) {
+    if (pkg == null || pkg.isBlank()) return;
+    for (var s : core.allInPackage(pkg)) {
+      if (isType(s) && simpleName(s.getFqName()).startsWith(simplePrefix)) {
+        add(out, s, content);
+      }
+    }
+  }
+
+  // Overloads for add(...) — keep both
+  private static void add(java.util.Map<String, CompletionItem> out, SymbolInfo s, String content) {
     String fqn = s.getFqName();
     if (out.containsKey(fqn)) return;
     String simple = simpleName(fqn);
-    out.put(fqn, new CompletionItem(
-        simple,          // label
-        fqn,             // detail
-        simple,          // insertText
-        s.getLocation()  // location (optional but nice to have)
-    ));
+    var edits = (content == null) ? java.util.List.<se.alipsa.jvmpls.core.model.TextEdit>of()
+        : maybeImportEdit(content, fqn); // your auto-import builder
+    out.put(fqn, new CompletionItem(simple, fqn, simple, s.getLocation(), edits));
   }
-
-  private static void collectTypesFromPackage(CoreQuery core, String pkg, String simplePrefix,
-                                              java.util.Map<String, CompletionItem> out) {
-    for (var s : core.allInPackage(pkg)) {
-      if (isType(s) && simpleName(s.getFqName()).startsWith(simplePrefix)) {
-        add(out, s);
-      }
-    }
+  private static void add(java.util.Map<String, CompletionItem> out, SymbolInfo s) {
+    add(out, s, null);
   }
 
   private static String completionPrefix(String content, Position pos) {
@@ -261,6 +288,45 @@ public final class JavaPlugin implements JvmLangPlugin {
       s--;
     }
     return content.substring(s, i);
+  }
+
+  private static java.util.List<TextEdit> maybeImportEdit(String content, String fqn) {
+    String pkg = find(PKG, content); // your existing PKG pattern
+    String simple = simpleName(fqn);
+    String owner = fqn.substring(0, fqn.length() - simple.length() - 1);
+
+    // already in same package?
+    if (owner.equals(pkg)) return java.util.List.of();
+
+    // already imported?
+    var m = IMPORT.matcher(content);
+    while (m.find()) {
+      String imp = m.group(1);
+      if (imp.equals(fqn) || imp.equals(owner + ".*")) return java.util.List.of();
+    }
+
+    // insert after last import or after package decl
+    int insertAt = -1;
+    int lastImportEnd = -1;
+    m.reset();
+    while (m.find()) lastImportEnd = m.end();
+    if (lastImportEnd >= 0) insertAt = lastImportEnd;
+    else {
+      var pm = PKG.matcher(content);
+      if (pm.find()) insertAt = pm.end();
+      else insertAt = 0;
+    }
+
+    // Build edit at (line/col) for `insertAt`
+    int line = 0, col = 0;
+    for (int i = 0; i < insertAt; i++) {
+      char c = content.charAt(i);
+      if (c == '\n') { line++; col = 0; } else { col++; }
+    }
+    Range r = new Range(new Position(line, col), new Position(line, col));
+    String sep = (insertAt == 0) ? "" : (content.charAt(insertAt - 1) == '\n' ? "" : "\n");
+    String text = sep + "import " + fqn + ";\n";
+    return java.util.List.of(new TextEdit(r, text));
   }
 
 }

@@ -28,19 +28,25 @@ public final class GroovyPlugin implements JvmLangPlugin {
       java.util.regex.Pattern.compile("(?m)^\\s*import(?:\\s+static)?\\s+([\\w.]+)(?:\\s+as\\s+\\w+)?\\s*$");
   private static final java.util.regex.Pattern STAR_SUFFIX =
       java.util.regex.Pattern.compile("\\.\\*$");
+  // Groovy default single-type imports (no import line should be suggested)
+  private static final Set<String> DEFAULT_SINGLE_IMPORTS = Set.of(
+      "java.math.BigInteger", "java.math.BigDecimal"
+  );
 
   // Keep per-file context for resolveSymbol (package & imports)
   private static final class FileCtx {
     String pkg = "";
     final List<String> singleImports = new ArrayList<>(); // a.b.C
     final List<String> starImports   = new ArrayList<>(); // a.b (package)
+    final Map<String,String> aliasToFqn = new HashMap<>(); // alias -> FQN
   }
+
   private final Map<String, FileCtx> ctxByUri = new ConcurrentHashMap<>();
   private final Map<String, String>  contentByUri = new ConcurrentHashMap<>();
 
-  // Groovy default star imports
+  // Groovy default star imports (visibility without explicit imports)
   private static final List<String> DEFAULT_STAR_IMPORTS = List.of(
-      "java.lang", "groovy.lang", "groovy.util"
+      "java.lang", "java.util", "java.io", "java.net", "groovy.lang", "groovy.util"
   );
 
   @Override
@@ -63,13 +69,13 @@ public final class GroovyPlugin implements JvmLangPlugin {
           // single imports (import a.b.C or import a.b.C as X)
           for (ImportNode imp : mn.getImports()) {
             String cls = imp.getClassName();
-            if (cls != null && !cls.isBlank()) fileCtx.singleImports.add(cls);
-          }
-
-          // static single imports: import static a.b.C.D
-          for (ImportNode imp : mn.getStaticImports().values()) {
-            String cls = imp.getClassName();
-            if (cls != null && !cls.isBlank()) fileCtx.singleImports.add(cls);
+            if (cls != null && !cls.isBlank()) {
+              fileCtx.singleImports.add(cls);
+              String alias = imp.getAlias();
+              if (alias != null && !alias.isBlank()) {
+                fileCtx.aliasToFqn.put(alias, cls);
+              }
+            }
           }
 
           // star imports (import a.b.*)
@@ -78,24 +84,18 @@ public final class GroovyPlugin implements JvmLangPlugin {
             if (pkg != null && !pkg.isBlank()) fileCtx.starImports.add(trimDot(pkg));
           }
 
-          // static star imports (import static a.b.C.*) -> treat as class owner’s package for simple lookup
-          for (ImportNode imp : mn.getStaticStarImports().values()) {
-            String cls = imp.getClassName();
-            if (cls != null) {
-              int i = cls.lastIndexOf('.');
-              if (i > 0) fileCtx.starImports.add(cls.substring(0, i));
-            }
-          }
+          // NOTE: static imports (single/star) import MEMBERS, not type simple names.
+          // Do NOT add them to visibility for types.
 
           // report package symbol (best-effort)
           if (!fileCtx.pkg.isBlank()) {
             reporter.reportPackage(fileCtx.pkg, new Location(fileUri,
-                new Range(new Position(0,0), new Position(0,1))));
+                new Range(new Position(0, 0), new Position(0, 1))));
           }
 
           // visit classes under this module
           for (ClassNode cn : mn.getClasses()) {
-            visitClass(fileUri, cn, reporter, fileCtx); // pass ctx
+            visitClass(fileUri, cn, reporter, fileCtx);
           }
         } else if (n instanceof ClassNode cn) {
           visitClass(fileUri, cn, reporter, fileCtx);
@@ -111,19 +111,20 @@ public final class GroovyPlugin implements JvmLangPlugin {
           diags.add(new Diagnostic(r, se.getOriginalMessage(), Diagnostic.Severity.ERROR, id(), "syntax"));
         } else {
           diags.add(new Diagnostic(
-              new Range(new Position(0,0), new Position(0,1)),
+              new Range(new Position(0, 0), new Position(0, 1)),
               msg.toString(), Diagnostic.Severity.ERROR, id(), "error"));
         }
       }
     } catch (Throwable t) {
-      diags.add(new Diagnostic(new Range(new Position(0,0), new Position(0,1)),
+      diags.add(new Diagnostic(new Range(new Position(0, 0), new Position(0, 1)),
           "Parse error: " + t.getMessage(), Diagnostic.Severity.ERROR, id(), "parse"));
     }
 
-    // Save ctx after successful/attempted parse (best-effort for resolveSymbol)
+    // Save ctx after successful/attempted parse (best-effort for resolveSymbol/completions)
     ctxByUri.put(fileUri, fileCtx);
     return diags;
   }
+
 
   @Override
   public SymbolInfo resolveSymbol(String fileUri, String symbolName, CoreQuery core) {
@@ -138,12 +139,13 @@ public final class GroovyPlugin implements JvmLangPlugin {
       symbolName = symbolName.substring(0, dot);
     }
 
-    // FQN direct lookup
-    if (symbolName.indexOf('.') >= 0) {
-      return core.findByFqn(symbolName).orElse(null);
-    }
-
     FileCtx ctx = ctxByUri.getOrDefault(fileUri, new FileCtx());
+
+    // Alias first: import foo.Bar as B
+    String aliasHit = ctx.aliasToFqn.get(symbolName);
+    if (aliasHit != null) {
+      return core.findByFqn(aliasHit).orElse(null);
+    }
 
     // Fallback: derive package from source text if we didn’t capture it during indexing
     if (ctx.pkg == null || ctx.pkg.isBlank()) {
@@ -199,53 +201,72 @@ public final class GroovyPlugin implements JvmLangPlugin {
     String content = contentByUri.get(fileUri);
     if (content == null) return List.of();
 
-    String prefix = completionPrefix(content, position); // may include dots
-    var out = new java.util.LinkedHashMap<String, CompletionItem>(); // fqName -> item
+    String prefix = completionPrefix(content, position);
+    var out = new java.util.LinkedHashMap<String, CompletionItem>(); // stable order, de-duped
 
-    // Dotted prefix => explicit package
+    // Build/repair per-file context (pkg/imports/aliases) if needed
+    FileCtx ctx = ensureCtx(fileUri, content);
+
+    // ----- dotted prefix: e.g. "thing.Ba"
     int lastDot = prefix.lastIndexOf('.');
     if (lastDot >= 0) {
-      String pkg = prefix.substring(0, lastDot);
+      String typedPkg     = prefix.substring(0, lastDot);
       String simplePrefix = prefix.substring(lastDot + 1);
-      collectTypesFromPackage(core, pkg, simplePrefix, out);
+
+      boolean starVisibleForTypedPkg = hasStarImportFor(typedPkg, content);
+
+      for (var s : core.allInPackage(typedPkg)) {
+        if (!isType(s)) continue;
+        String fqn    = s.getFqName();
+        String simple = simpleName(fqn);
+        if (!simple.startsWith(simplePrefix)) continue;
+
+        // visible if same-pkg, single-import, alias, star-import (ctx) OR a raw "import pkg.*" line exists
+        boolean visible  = isTypeVisibleInFile(fqn, ctx) || starVisibleForTypedPkg;
+        boolean needEdit = !visible;
+
+        add(out, s, needEdit ? content : null); // attach auto-import only when NOT visible
+      }
       return List.copyOf(out.values());
     }
 
-    // Load ctx (and ensure package fallback)
-    FileCtx ctx = ctxByUri.getOrDefault(fileUri, new FileCtx());
-    if (ctx.pkg == null || ctx.pkg.isBlank()) {
-      var m = PKG_DECL.matcher(content);
-      if (m.find()) { ctx.pkg = m.group(1); ctxByUri.put(fileUri, ctx); }
-    }
-
-    // If ctx imports are empty (e.g., parse failed earlier), recover from raw text
-    if (ctx.singleImports.isEmpty() && ctx.starImports.isEmpty()) {
-      var m = IMPORT_LINE.matcher(content);
-      while (m.find()) {
-        String imp = m.group(1);
-        if (STAR_SUFFIX.matcher(imp).find()) {
-          ctx.starImports.add(imp.substring(0, imp.length() - 2));
-        } else {
-          ctx.singleImports.add(imp);
+    // ----- undotted prefix: e.g. "Ba" -----
+    // Same package (already visible -> no edits)
+    if (ctx.pkg != null && !ctx.pkg.isBlank()) {
+      for (var s : core.allInPackage(ctx.pkg)) {
+        if (isType(s) && simpleName(s.getFqName()).startsWith(prefix)) {
+          add(out, s); // no edits for visible symbols
         }
       }
     }
 
-    // Same package
-    if (ctx.pkg != null && !ctx.pkg.isBlank()) {
-      collectTypesFromPackage(core, ctx.pkg, prefix, out);
-    }
-
-    // Single imports
+    // Single-type imports (already visible -> no edits)
     for (String imp : ctx.singleImports) {
       core.findByFqn(imp).ifPresent(sym -> {
-        if (isType(sym) && simpleName(sym.getFqName()).startsWith(prefix)) add(out, sym);
+        if (isType(sym) && simpleName(sym.getFqName()).startsWith(prefix)) {
+          add(out, sym); // no edits
+        }
       });
     }
 
-    // Star imports
+    // Aliases (offer alias label, never edits)
+    for (var e : ctx.aliasToFqn.entrySet()) {
+      String alias = e.getKey();
+      if (!alias.startsWith(prefix)) continue;
+      String fqn = e.getValue();
+      core.findByFqn(fqn).ifPresent(sym -> {
+        out.put("__alias__:" + alias,
+            new CompletionItem(alias, fqn, alias, sym.getLocation(), java.util.List.of()));
+      });
+    }
+
+    // Star imports (explicit + Groovy defaults) — already visible -> no edits
     for (String p : union(ctx.starImports, DEFAULT_STAR_IMPORTS)) {
-      collectTypesFromPackage(core, p, prefix, out);
+      for (var s : core.allInPackage(p)) {
+        if (isType(s) && simpleName(s.getFqName()).startsWith(prefix)) {
+          add(out, s); // no edits
+        }
+      }
     }
 
     return List.copyOf(out.values());
@@ -352,18 +373,82 @@ public final class GroovyPlugin implements JvmLangPlugin {
     };
   }
 
-  private static void add(java.util.Map<String, CompletionItem> out, SymbolInfo s) {
+  private static void add(java.util.Map<String, CompletionItem> out, SymbolInfo s, String content) {
     String fqn = s.getFqName();
     if (out.containsKey(fqn)) return;
     String simple = simpleName(fqn);
-    out.put(fqn, new CompletionItem(simple, fqn, simple, s.getLocation()));
+    var edits = (content == null) ? java.util.List.<se.alipsa.jvmpls.core.model.TextEdit>of()
+        : maybeImportEdit(content, fqn);
+    out.put(fqn, new CompletionItem(simple, fqn, simple, s.getLocation(), edits));
+  }
+
+  // Backward-compat for places that don't care about edits
+  private static void add(java.util.Map<String, CompletionItem> out, SymbolInfo s) {
+    add(out, s, null);
+  }
+
+  private static java.util.List<TextEdit> maybeImportEdit(String content, String fqn) {
+    // Resolve current package
+    String pkg = null;
+    var pm = PKG_DECL.matcher(content);
+    if (pm.find()) pkg = pm.group(1);
+
+    String simple = simpleName(fqn);
+    String owner  = fqn.substring(0, fqn.length() - simple.length() - 1);
+
+    // No import needed in same package, default star imports, or Groovy's default single imports
+    if (owner.equals(pkg) || DEFAULT_STAR_IMPORTS.contains(owner) || DEFAULT_SINGLE_IMPORTS.contains(fqn)) {
+      return List.of();
+    }
+
+    // Already imported explicitly or via (non-static) star?
+    var IMPORT_WITH_ALIAS = java.util.regex.Pattern.compile(
+        "(?m)^\\s*import(?:\\s+(static))?\\s+([\\w.]+)(?:\\s+as\\s+\\w+)?\\s*$");
+    var im = IMPORT_WITH_ALIAS.matcher(content);
+    while (im.find()) {
+      String isStatic = im.group(1);
+      String imp      = im.group(2);
+      if (isStatic != null) continue; // ignore static imports here
+      if (imp.equals(fqn) || imp.equals(owner + ".*")) return java.util.List.of();
+    }
+
+    // Compute insertion point: after last (non-static) import, else after package, else at top
+    int insertAt = -1;
+    int lastImportEnd = -1;
+    im.reset();
+    while (im.find()) {
+      if (im.group(1) == null) lastImportEnd = im.end(); // only non-static imports
+    }
+    if (lastImportEnd >= 0) insertAt = lastImportEnd;
+    else if (pm.reset().find()) insertAt = pm.end();
+    else insertAt = 0;
+
+    // Convert char offset to Position
+    int line = 0, col = 0;
+    for (int i = 0; i < insertAt; i++) {
+      char c = content.charAt(i);
+      if (c == '\n') { line++; col = 0; } else { col++; }
+    }
+
+    // Build edit text (Groovy has no semicolons)
+    String prefixNL = (insertAt == 0 || content.charAt(Math.max(0, insertAt - 1)) == '\n') ? "" : "\n";
+    String newText  = prefixNL + "import " + fqn + "\n";
+
+    var range = new Range(
+        new Position(line, col),
+        new Position(line, col)
+    );
+    var edit = new TextEdit(range, newText);
+    return List.of(edit);
   }
 
   private static void collectTypesFromPackage(CoreQuery core, String pkg, String simplePrefix,
+                                              String content,
                                               java.util.Map<String, CompletionItem> out) {
+    if (pkg == null || pkg.isBlank()) return;
     for (var s : core.allInPackage(pkg)) {
       if (isType(s) && simpleName(s.getFqName()).startsWith(simplePrefix)) {
-        add(out, s);
+        add(out, s, content);
       }
     }
   }
@@ -378,5 +463,78 @@ public final class GroovyPlugin implements JvmLangPlugin {
       s--;
     }
     return content.substring(s, i);
+  }
+
+  private static String ownerPkg(String fqn) {
+    int i = fqn.lastIndexOf('.');
+    return i < 0 ? "" : fqn.substring(0, i);
+  }
+
+  // Normalize: strip trailing '.' if present
+  private static String normPkg(String p) {
+    if (p == null) return "";
+    int n = p.length();
+    if (n > 0 && p.charAt(n - 1) == '.') return p.substring(0, n - 1);
+    return p;
+  }
+
+  private static String ownerOf(String fqn) {
+    int i = fqn.lastIndexOf('.');
+    return i < 0 ? "" : fqn.substring(0, i);
+  }
+
+  /** Build/augment ctx if parse failed earlier */
+  private FileCtx ensureCtx(String fileUri, String content) {
+    FileCtx ctx = ctxByUri.get(fileUri);
+    if (ctx == null) ctx = new FileCtx();
+
+    if (ctx.pkg == null || ctx.pkg.isBlank()) {
+      var pm = PKG_DECL.matcher(content);
+      if (pm.find()) ctx.pkg = pm.group(1);
+    }
+
+    if (ctx.singleImports.isEmpty() && ctx.starImports.isEmpty() && ctx.aliasToFqn.isEmpty()) {
+      var IMPORT_WITH_ALIAS = java.util.regex.Pattern.compile(
+          "(?m)^\\s*import(?:\\s+(static))?\\s+([\\w.]+)(?:\\s+as\\s+(\\w+))?\\s*$");
+      var m = IMPORT_WITH_ALIAS.matcher(content);
+      while (m.find()) {
+        String isStatic = m.group(1);
+        String target   = m.group(2);
+        String alias    = m.group(3);
+        if (isStatic != null) continue;                 // static imports are members, not types
+        if (STAR_SUFFIX.matcher(target).find()) {
+          ctx.starImports.add(normPkg(target.substring(0, target.length() - 2))); // "a.b.*" -> "a.b"
+        } else {
+          ctx.singleImports.add(target);
+          if (alias != null && !alias.isBlank()) ctx.aliasToFqn.put(alias, target);
+        }
+      }
+    }
+
+    ctxByUri.put(fileUri, ctx);
+    return ctx;
+  }
+
+  /** True if fqn already visible in file by package, single import, alias, or star import (incl. Groovy defaults). */
+  private static boolean isTypeVisibleInFile(String fqn, FileCtx ctx) {
+    String owner = normPkg(ownerOf(fqn));
+    if (owner.equals(normPkg(ctx.pkg))) return true;
+    if (ctx.singleImports.contains(fqn)) return true;
+    if (ctx.aliasToFqn.containsValue(fqn)) return true;
+    for (String p : ctx.starImports) {
+      if (normPkg(p).equals(owner)) return true;
+    }
+    for (String p : DEFAULT_STAR_IMPORTS) {
+      if (normPkg(p).equals(owner)) return true;
+    }
+    return false;
+  }
+
+  /** Extra guard: if parser missed imports, detect a literal `import <pkg>.*` line in the text. */
+  private static boolean hasStarImportFor(String pkg, String content) {
+    String needle = "import " + pkg + ".*";
+    String needleStatic = "import static " + pkg + ".*";
+    // crude but effective and whitespace-tolerant enough for tests
+    return content.contains(needle) || content.contains(needleStatic);
   }
 }
