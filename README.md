@@ -1,5 +1,36 @@
 # jvm-pls - JVM Polyglot Language Server
 
+The JVM ecosystem is inherently polyglot these days, 
+and the cross-language interoperability (Java ↔ Groovy ↔ Kotlin ↔ Scala ↔ Clojure etc.) is crucial in real projects. 
+Current language servers typically focus on one language at a time and don’t handle multi-language projects 
+where source files depend on each other across languages.
+
+A JVM-wide polyglot language server with a plugin architecture could be a game changer for JVM polyglot projects. 
+It would enable:
+- Cross-language understanding 
+- Consistent refactoring tools 
+- More reliable completions and diagnostics
+
+## Why a JVM-wide Language Server with Plugin Support?
+- **Unified symbol table and type resolution:** One central server with a combined semantic model could resolve types across all JVM languages seamlessly. 
+- **Cross-language navigation and completion:** You could jump from a Groovy class to a Kotlin interface it implements, or a Java class using Scala traits, without context loss. 
+- **Consistent diagnostics and refactoring:** Errors that arise because of cross-language interaction would be caught properly (e.g., method missing in Kotlin, used in Groovy).
+- **Simpler build integration:** Integrate once with build tools (Gradle, Maven), classpaths, and compilation phases shared across languages. 
+- **Plugin architecture:** Individual language parsers, analyzers, and AST processors would be plugins, each contributing their own syntax, completions, etc., but sharing a core JVM symbol model.
+
+## Challenges for Such a JVM Polyglot Language Server
+- **Complexity:** Combining different parsing and semantic models (Groovy’s dynamic features, Kotlin’s null-safety, Scala’s implicits, etc.) into a single coherent API is non-trivial. 
+- **Performance:** Maintaining incremental analysis across multiple languages and large projects could get expensive.
+- **Community and Adoption:** Needs buy-in from JVM language communities or dedicated maintainers willing to build and maintain it.
+- **Evolving language features:** Keeping up with rapidly evolving languages (Kotlin versions, Groovy enhancements, Scala 3) is a moving target.
+
+## Existing Efforts & Inspiration
+- Eclipse JDT is Java-only but very mature, with some Groovy and Kotlin integrations in Eclipse IDE.
+- IntelliJ IDEA internally has polyglot support (Java, Groovy, Kotlin, Scala), but it’s a closed-source commercial IDE.
+- LSP for Kotlin and Groovy are separate projects, no unified JVM LSP.
+- Metals (Scala LSP) and Bazel or Gradle Build Servers offer multi-language build awareness but not multi-language LSP.
+
+# Requirements
 ## 1. Core JVM Language Server
    Responsibilities:
 
@@ -77,7 +108,10 @@ Exposes full LSP interface for:
 - Code navigation (go-to-definition, find references). 
 - Rename/refactoring support. 
 - Hover info, signature help, code actions. 
-- Optional language-specific extensions (e.g., Groovy's dynamic type inference hints).
+- Language-specific extensions 
+  - Groovy's dynamic type inference hints
+  - @Grab
+  - metaClass closures and properties
 
 ### Example Workflow
 1. Editor opens a mixed Java + Groovy + Kotlin project. 
@@ -126,7 +160,7 @@ Allow third-party plugins (e.g., Lombok plugin, framework-specific plugins) to h
 +-------------------------------------------------------------+
 ```
 ## Plugin Interface Design
-   Each language plugin should implement a well-defined interface that the core language server can use to:
+Each language plugin should implement a well-defined interface that the core language server can use to:
 
 - Parse & Analyze Source Code 
 - Report Symbols and Types 
