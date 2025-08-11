@@ -25,3 +25,8 @@ replay_pid*
 /.idea/
 /jvmpls-core/target/
 /jvmpls-core/jvmpls-core.iml
+/jvmpls-java/jvmpls-java.iml
+/jvmpls-aggregator.iml
+/jvmpls-it/target/
+/jvmpls-groovy/target/
+/jvmpls-java/target/
