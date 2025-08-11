@@ -11,6 +11,9 @@ It would enable:
 - Consistent refactoring tools 
 - More reliable completions and diagnostics
 
+But since all existing alternative jvm languages also supports java in some fashion, 
+this would be very useful for single jvm language projects too.
+
 ## Why a JVM-wide Language Server with Plugin Support?
 - **Unified symbol table and type resolution:** One central server with a combined semantic model could resolve types across all JVM languages seamlessly. 
 - **Cross-language navigation and completion:** You could jump from a Groovy class to a Kotlin interface it implements, or a Java class using Scala traits, without context loss. 
