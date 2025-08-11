@@ -103,6 +103,7 @@ Handle multiple requests and file changes asynchronously to keep responsiveness.
 Allow third-party plugins (e.g., Lombok plugin, framework-specific plugins) to hook into core and extend features.
 
 ## Summary Diagram
+```
 +-------------------------------------------------------------+
 |                    JVM Polyglot Language Server             |
 |                                                             |
@@ -110,20 +111,20 @@ Allow third-party plugins (e.g., Lombok plugin, framework-specific plugins) to h
 |  |   Language       |       |     Unified Symbol Table   |  |
 |  |   Plugins        |<----->|   & Cross-Language Model   |  |
 |  | (Java, Groovy,   |       +----------------------------+  |
-|  |  Kotlin, Scala,  |                    ^                    |
-|  |  Clojure, JS)    |                    |                    |
-|  +------------------+                    |                    |
-|           ^                            Cross-language          |
-|           |                            dependency graph        |
-|           |                                                   |
-|    +------------------+                                      |
-|    | Build Tool       |                                      |
-|    | Integration      |                                      |
-|    +------------------+                                      |
+|  |  Kotlin, Scala,  |                    ^                  |
+|  |  Clojure, JS)    |                    |                  |
+|  +------------------+                    |                  |
+|           ^                            Cross-language       |
+|           |                            dependency graph     |
+|           |                                                 |
+|    +------------------+                                     |
+|    | Build Tool       |                                     |
+|    | Integration      |                                     |
+|    +------------------+                                     |
 |                                                             |
 |                  Editor (via LSP)                           |
 +-------------------------------------------------------------+
-
+```
 ## Plugin Interface Design
    Each language plugin should implement a well-defined interface that the core language server can use to:
 
