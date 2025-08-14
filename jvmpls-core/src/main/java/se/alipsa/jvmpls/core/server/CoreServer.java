@@ -54,8 +54,6 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
                                   Executor executor,
                                   DiagnosticsPublisher publisher) {
     PluginEnvironment env = new DefaultPluginEnvironment(index, executor, List.of());
-    // Ensure already-constructed registry plugins are configured; harmless if already done.
-    registry.all().forEach(p -> { /* no-op, configure is called by PluginRegistry.register(...) */ });
     CoreEngine engine = new CoreEngine(registry, index, docs, graph, executor);
     return new CoreServer(engine, publisher, executor, false);
   }
