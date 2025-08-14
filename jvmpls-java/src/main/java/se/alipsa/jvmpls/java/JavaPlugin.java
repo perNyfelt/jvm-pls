@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 public final class JavaPlugin implements JvmLangPlugin {
 
@@ -21,12 +22,12 @@ public final class JavaPlugin implements JvmLangPlugin {
   private final Map<String,String> contentByUri = new ConcurrentHashMap<>();
 
   private static final java.util.regex.Pattern PKG =
-      java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
+      Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
   private static final java.util.regex.Pattern IMPORT =
-      java.util.regex.Pattern.compile("(?m)^\\s*import(?:\\s+static)?\\s+([\\w.]+)\\s*;");
+      // Capture both single-type and on-demand imports:
+      // group(1) examples: "a.b.C", "a.b.*"
+      Pattern.compile("(?m)^\\s*import(?:\\s+static)?\\s+([\\w.]+(?:\\.\\*)?)\\s*;");
   private static final List<String> JAVA_DEFAULT_STAR_IMPORTS = List.of("java.lang");
-  private static final java.util.regex.Pattern IMPORT_WITH_ALIAS =
-      java.util.regex.Pattern.compile("(?m)^\\s*import(?:\\s+static)?\\s+([\\w.]+)(?:\\s+as\\s+(\\w+))?\\s*$");
 
   @Override public String id() { return "java"; }
   @Override public Set<String> fileExtensions() { return Set.of("java"); }

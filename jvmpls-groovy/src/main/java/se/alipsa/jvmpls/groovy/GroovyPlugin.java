@@ -15,6 +15,7 @@ import org.codehaus.groovy.syntax.SyntaxException;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 public final class GroovyPlugin implements JvmLangPlugin {
 
@@ -22,12 +23,10 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   @Override public Set<String> fileExtensions() { return Set.of("groovy", "gvy", "gy", "gsh"); }
 
-  private static final java.util.regex.Pattern PKG_DECL =
-      java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;?\\s*$");
-  private static final java.util.regex.Pattern IMPORT_LINE =
-      java.util.regex.Pattern.compile("(?m)^\\s*import(?:\\s+static)?\\s+([\\w.]+)(?:\\s+as\\s+\\w+)?\\s*$");
-  private static final java.util.regex.Pattern STAR_SUFFIX =
-      java.util.regex.Pattern.compile("\\.\\*$");
+  private static final Pattern PKG_DECL =
+      Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;?\\s*$");
+  private static final Pattern STAR_SUFFIX =
+      Pattern.compile("\\.\\*$");
   // Groovy default single-type imports (no import line should be suggested)
   private static final Set<String> DEFAULT_SINGLE_IMPORTS = Set.of(
       "java.math.BigInteger", "java.math.BigDecimal"
