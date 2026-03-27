@@ -30,3 +30,4 @@ replay_pid*
 /jvmpls-it/target/
 /jvmpls-groovy/target/
 /jvmpls-java/target/
+/.remember/
