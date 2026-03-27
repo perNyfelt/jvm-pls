@@ -41,6 +41,7 @@ public final class Main {
         Launcher<LanguageClient> launcher = LSPLauncher.createServerLauncher(server, in, out);
         server.connect(launcher.getRemoteProxy());
         launcher.startListening().get();
+        System.exit(server.getExitCode());
     }
 
     private static void printUsage() {

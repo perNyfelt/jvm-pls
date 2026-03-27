@@ -101,6 +101,15 @@ class JvmPlsLanguageServerTest {
 
     assertNotNull(result.getCapabilities(), "capabilities should not be null");
 
+    // Text document sync should advertise open/close and full change sync
+    Either<TextDocumentSyncKind, TextDocumentSyncOptions> syncCapability =
+        result.getCapabilities().getTextDocumentSync();
+    assertNotNull(syncCapability, "textDocumentSync should not be null");
+    assertTrue(syncCapability.isRight(), "textDocumentSync should be TextDocumentSyncOptions");
+    TextDocumentSyncOptions syncOptions = syncCapability.getRight();
+    assertTrue(syncOptions.getOpenClose(), "openClose should be true");
+    assertEquals(TextDocumentSyncKind.Full, syncOptions.getChange());
+
     CompletionOptions completionProvider = result.getCapabilities().getCompletionProvider();
     assertNotNull(completionProvider, "completionProvider should not be null");
     assertTrue(completionProvider.getTriggerCharacters().contains("."),

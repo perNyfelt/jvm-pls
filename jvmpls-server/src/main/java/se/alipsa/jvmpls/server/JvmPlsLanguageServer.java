@@ -19,7 +19,8 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
   private final JvmPlsWorkspaceService workspaceService;
 
   private volatile LanguageClient client;
-  private volatile boolean shutdownRequested = false;
+  private volatile boolean shutdownRequested;
+  private volatile int exitCode = 1;
 
   public JvmPlsLanguageServer() {
     this.coreServer = CoreServer.createDefault(DiagnosticsPublisher.NO_OP);
@@ -36,7 +37,10 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
   @Override
   public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
     ServerCapabilities capabilities = new ServerCapabilities();
-    capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
+    TextDocumentSyncOptions syncOptions = new TextDocumentSyncOptions();
+    syncOptions.setOpenClose(true);
+    syncOptions.setChange(TextDocumentSyncKind.Full);
+    capabilities.setTextDocumentSync(syncOptions);
 
     CompletionOptions completionOptions = new CompletionOptions();
     completionOptions.setTriggerCharacters(List.of("."));
@@ -64,7 +68,12 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
 
   @Override
   public void exit() {
-    System.exit(shutdownRequested ? 0 : 1);
+    exitCode = shutdownRequested ? 0 : 1;
+  }
+
+  /** Returns the exit code after {@link #exit()} has been called. */
+  public int getExitCode() {
+    return exitCode;
   }
 
   @Override
