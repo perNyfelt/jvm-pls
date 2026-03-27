@@ -19,14 +19,14 @@ import java.util.regex.Pattern;
 
 public final class GroovyPlugin implements JvmLangPlugin {
 
-  @Override public String id() { return "groovy"; }
+  @Override public String id() { return "groovy"; } 
 
   @Override public Set<String> fileExtensions() { return Set.of("groovy", "gvy", "gy", "gsh"); }
 
   private static final Pattern PKG_DECL =
       Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;?\\s*$");
   private static final Pattern STAR_SUFFIX =
-      Pattern.compile("\\.\\*$");
+      Pattern.compile("\\.\\*");
   // Groovy default single-type imports (no import line should be suggested)
   private static final Set<String> DEFAULT_SINGLE_IMPORTS = Set.of(
       "java.math.BigInteger", "java.math.BigDecimal"
@@ -206,7 +206,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     // Build/repair per-file context (pkg/imports/aliases) if needed
     FileCtx ctx = ensureCtx(fileUri, content);
 
-    // ----- dotted prefix: e.g. "thing.Ba"
+    // ----- dotted prefix: e.g. "thing.Ba" 
     int lastDot = prefix.lastIndexOf('.');
     if (lastDot >= 0) {
       String typedPkg     = prefix.substring(0, lastDot);
@@ -267,7 +267,6 @@ public final class GroovyPlugin implements JvmLangPlugin {
         }
       }
     }
-
     return List.copyOf(out.values());
   }
 
@@ -343,7 +342,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
       first = false;
     }
     sb.append(")");
-    return sb + typeName(mn.getReturnType());
+    return sb.toString() + typeName(mn.getReturnType());
   }
 
   private static String typeName(ClassNode t) {
@@ -402,7 +401,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
     // Already imported explicitly or via (non-static) star?
     var IMPORT_WITH_ALIAS = java.util.regex.Pattern.compile(
-        "(?m)^\\s*import(?:\\s+(static))?\\s+([\\w.]+)(?:\\s+as\\s+\\w+)?\\s*$");
+        "(?m)^\\s*import(?:\\s+(static))?\\s+([\\w.]+)(?:\\s+as\\s+(\\w+))?\\s*$");
     var im = IMPORT_WITH_ALIAS.matcher(content);
     while (im.find()) {
       String isStatic = im.group(1);

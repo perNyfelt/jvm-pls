@@ -7,5 +7,6 @@ import java.util.Optional;
 
 public interface CoreQuery {
   Optional<SymbolInfo> findByFqn(String fqn);
+  List<SymbolInfo> findBySimpleName(String simpleName);
   List<SymbolInfo> allInPackage(String pkgFqn);
 }

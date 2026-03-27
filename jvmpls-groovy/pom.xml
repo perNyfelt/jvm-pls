@@ -13,7 +13,7 @@
   <artifactId>jvmpls-groovy</artifactId>
 
   <properties>
-    <groovy.version>4.0.28</groovy.version>
+    <groovy.version>5.0.4</groovy.version>
   </properties>
 
   <dependencyManagement>

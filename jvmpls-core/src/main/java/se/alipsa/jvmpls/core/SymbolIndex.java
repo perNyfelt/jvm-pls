@@ -28,4 +28,28 @@ public final class SymbolIndex implements CoreQuery {
     byFqn.forEach((k,v) -> { if (k.startsWith(prefix)) out.add(v); });
     return out;
   }
+
+  @Override
+  public List<SymbolInfo> findBySimpleName(String simpleName) {
+    List<SymbolInfo> results = new ArrayList<>();
+    if (simpleName == null || simpleName.isEmpty()) {
+      return results;
+    }
+    for (SymbolInfo sym : byFqn.values()) {
+      String fqn = sym.getFqName();
+      int lastDot = fqn.lastIndexOf('.');
+      int lastHash = fqn.lastIndexOf('#');
+      int lastSep = Math.max(lastDot, lastHash);
+      String name = fqn.substring(lastSep + 1);
+      // for methods, fqn contains signature, so strip it
+      int openParen = name.indexOf('(');
+      if (openParen > 0) {
+        name = name.substring(0, openParen);
+      }
+      if (name.equals(simpleName)) {
+        results.add(sym);
+      }
+    }
+    return results;
+  }
 }
