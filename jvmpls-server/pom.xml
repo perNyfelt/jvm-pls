@@ -33,6 +33,21 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
+      <groupId>se.alipsa.jvmpls</groupId>
+      <artifactId>jvmpls-build</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>se.alipsa.jvmpls</groupId>
+      <artifactId>jvmpls-build-maven</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>se.alipsa.jvmpls</groupId>
+      <artifactId>jvmpls-build-gradle</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.eclipse.lsp4j</groupId>
       <artifactId>org.eclipse.lsp4j</artifactId>
     </dependency>
