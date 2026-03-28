@@ -22,6 +22,7 @@ import se.alipsa.jvmpls.core.model.CompletionItem;
 import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.model.Location;
 import se.alipsa.jvmpls.core.model.Range;
+import se.alipsa.jvmpls.core.server.CoreServer;
 import se.alipsa.jvmpls.server.JvmPlsLanguageServer;
 
 import java.util.List;
@@ -140,6 +141,16 @@ class JvmPlsLanguageServerLifecycleTest {
     assertEquals(TEST_URI, diagnostics.getUri());
     assertEquals(1, diagnostics.getDiagnostics().size());
     assertTrue(String.valueOf(diagnostics.getDiagnostics().getFirst().getMessage()).contains("boom"));
+  }
+
+  @Test
+  void publicConstructor_rejectsCoreServerToAvoidDuplicateDiagnostics() {
+    try (CoreServer coreServer = CoreServer.createDefault((uri, diagnostics) -> { })) {
+      IllegalArgumentException error = assertThrows(
+          IllegalArgumentException.class,
+          () -> new JvmPlsLanguageServer(coreServer, coreServer, exitCode -> { }));
+      assertTrue(error.getMessage().contains("CoreServer"));
+    }
   }
 
   private static void assertInvalidRequest(Throwable throwable) {

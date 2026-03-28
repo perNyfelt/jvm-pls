@@ -35,11 +35,19 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
     this(new ClientDiagnosticsPublisher(), System::exit);
   }
 
-  /** Visible for tests and alternate embeddings that need explicit lifecycle hooks. */
+  /**
+   * Visible for tests and embeddings that provide a non-publishing {@link CoreFacade}.
+   * Do not pass {@link CoreServer}; it already owns diagnostics publishing.
+   */
   public JvmPlsLanguageServer(CoreFacade core, AutoCloseable coreLifecycle, IntConsumer processExit) {
+    CoreFacade safeCore = Objects.requireNonNull(core, "core");
+    if (safeCore instanceof CoreServer) {
+      throw new IllegalArgumentException(
+          "Passing CoreServer is unsupported here because it already publishes diagnostics");
+    }
     this.coreLifecycle = Objects.requireNonNull(coreLifecycle, "coreLifecycle");
     this.diagnosticsPublisher = new ClientDiagnosticsPublisher();
-    CoreFacade publishingCore = publishDiagnosticsFrom(Objects.requireNonNull(core, "core"), diagnosticsPublisher);
+    CoreFacade publishingCore = publishDiagnosticsFrom(safeCore, diagnosticsPublisher);
     this.textDocumentService = new JvmPlsTextDocumentService(publishingCore, this::acceptingRequests);
     this.workspaceService = new JvmPlsWorkspaceService(this::acceptingRequests);
     this.processExit = Objects.requireNonNull(processExit, "processExit");
