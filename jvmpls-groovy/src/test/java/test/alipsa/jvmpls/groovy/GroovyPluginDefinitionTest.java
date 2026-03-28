@@ -53,6 +53,33 @@ class GroovyPluginDefinitionTest {
     }
   }
 
+  @Test
+  void definition_findsExternalJdkType() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-groovy-jdk-def");
+
+    Path main = dir.resolve("Main.groovy");
+    String mainCode = """
+      package demo
+      import java.util.List
+      class Main {
+        List names = []
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      Position pos = firstOccurrencePosition(mainCode, "List");
+      Optional<Location> def = server.definition(mainUri, pos);
+
+      assertTrue(def.isPresent(), "definition for external JDK type should be found");
+      assertTrue(def.get().getUri().contains("java/util/List"),
+          "definition should point to the binary List class resource");
+    }
+  }
+
   private static Position firstOccurrencePosition(String text, String needle) {
     int idx = text.indexOf(needle);
     assertTrue(idx >= 0, "needle not found");

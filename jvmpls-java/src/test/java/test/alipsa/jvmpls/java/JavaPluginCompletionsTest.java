@@ -102,6 +102,33 @@ class JavaPluginCompletionsTest {
     }
   }
 
+  @Test
+  void completes_external_jdk_types_from_package_prefix() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-java-complete3");
+
+    Path main = dir.resolve("Main.java");
+    String mainCode = """
+      package demo;
+      class Main {
+        void m() {
+          java.util.Li/*caret*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      Position pos = positionAtMarker(mainCode, "/*caret*/");
+      List<CompletionItem> items = server.completions(mainUri, pos);
+
+      assertTrue(containsLabel(items, "List"),
+          "Expected 'List' from external JDK package completion");
+    }
+  }
+
 
   // ---------- helpers ----------
 

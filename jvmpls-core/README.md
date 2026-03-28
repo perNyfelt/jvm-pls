@@ -18,6 +18,12 @@ Add `jvmpls-core` plus the language plugins you want on the runtime classpath.
 
   <dependency>
     <groupId>se.alipsa.jvmpls</groupId>
+    <artifactId>jvmpls-classpath</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </dependency>
+
+  <dependency>
+    <groupId>se.alipsa.jvmpls</groupId>
     <artifactId>jvmpls-java</artifactId>
     <version>1.0.0-SNAPSHOT</version>
   </dependency>
@@ -33,6 +39,7 @@ Add `jvmpls-core` plus the language plugins you want on the runtime classpath.
 Notes:
 
 - `jvmpls-core` provides the transport-agnostic API.
+- `jvmpls-classpath` enables external JDK and dependency JAR resolution.
 - `jvmpls-java` and `jvmpls-groovy` are discovered via `ServiceLoader`.
 - If a plugin is not on the runtime classpath, files for that language will not be handled.
 

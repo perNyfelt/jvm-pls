@@ -1,13 +1,13 @@
-<project>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
-  <artifactId>jvmpls-java</artifactId>
-  <packaging>jar</packaging>
 
   <parent>
     <groupId>se.alipsa.jvmpls</groupId>
     <artifactId>jvmpls-aggregator</artifactId>
     <version>1.0.0-SNAPSHOT</version>
   </parent>
+
+  <artifactId>jvmpls-classpath</artifactId>
 
   <dependencies>
     <dependency>
@@ -16,14 +16,16 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
+      <groupId>io.github.classgraph</groupId>
+      <artifactId>classgraph</artifactId>
     </dependency>
     <dependency>
-      <groupId>se.alipsa.jvmpls</groupId>
-      <artifactId>jvmpls-classpath</artifactId>
-      <version>${project.version}</version>
-      <scope>test</scope>
+      <groupId>org.ow2.asm</groupId>
+      <artifactId>asm</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
     </dependency>
   </dependencies>
 

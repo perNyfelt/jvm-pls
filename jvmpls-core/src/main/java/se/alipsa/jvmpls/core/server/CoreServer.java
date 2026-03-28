@@ -3,9 +3,11 @@ package se.alipsa.jvmpls.core.server;
 import se.alipsa.jvmpls.core.*;
 import se.alipsa.jvmpls.core.model.*;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.ServiceLoader;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,13 +35,21 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
 
   /** Build a CoreServer with sensible defaults and plugins discovered via ServiceLoader. */
   public static CoreServer createDefault(DiagnosticsPublisher publisher) {
+    return createDefault(publisher, runtimeClasspath(), currentJdkHome());
+  }
+
+  /** Build a CoreServer with explicit classpath/JDK configuration for external symbol resolution. */
+  public static CoreServer createDefault(DiagnosticsPublisher publisher,
+                                         List<String> classpath,
+                                         Path targetJdkHome) {
     SymbolIndex index = new SymbolIndex();
     DocumentStore docs = new DocumentStore();
     DependencyGraph graph = new DependencyGraph();
     Executor executor = Executors.newVirtualThreadPerTaskExecutor();
     boolean owns = true;
 
-    PluginEnvironment env = new DefaultPluginEnvironment(index, executor, List.of());
+    registerExternalProviders(index, classpath, targetJdkHome);
+    PluginEnvironment env = new DefaultPluginEnvironment(index, executor, classpath);
     PluginRegistry registry = new PluginRegistry(env);
 
     CoreEngine engine = new CoreEngine(registry, index, docs, graph, executor);
@@ -53,7 +63,19 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
                                   DependencyGraph graph,
                                   Executor executor,
                                   DiagnosticsPublisher publisher) {
-    PluginEnvironment env = new DefaultPluginEnvironment(index, executor, List.of());
+    return create(registry, index, docs, graph, executor, runtimeClasspath(), currentJdkHome(), publisher);
+  }
+
+  public static CoreServer create(PluginRegistry registry,
+                                  SymbolIndex index,
+                                  DocumentStore docs,
+                                  DependencyGraph graph,
+                                  Executor executor,
+                                  List<String> classpath,
+                                  Path targetJdkHome,
+                                  DiagnosticsPublisher publisher) {
+    registerExternalProviders(index, classpath, targetJdkHome);
+    PluginEnvironment env = new DefaultPluginEnvironment(index, executor, classpath);
     CoreEngine engine = new CoreEngine(registry, index, docs, graph, executor);
     return new CoreServer(engine, publisher, executor, false);
   }
@@ -104,5 +126,33 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
     if (ownsExecutor && executor instanceof ExecutorService es) {
       es.shutdown();
     }
+  }
+
+  private static void registerExternalProviders(SymbolIndex index,
+                                                List<String> classpath,
+                                                Path targetJdkHome) {
+    SymbolProviderContext context = new SymbolProviderContext(classpath, targetJdkHome);
+    ServiceLoader<SymbolProviderFactory> loader = ServiceLoader.load(SymbolProviderFactory.class);
+    for (SymbolProviderFactory factory : loader) {
+      for (SymbolProvider provider : factory.createProviders(context)) {
+        index.registerProvider(provider);
+      }
+    }
+  }
+
+  private static List<String> runtimeClasspath() {
+    String classpath = System.getProperty("java.class.path", "");
+    if (classpath.isBlank()) {
+      return List.of();
+    }
+    return java.util.Arrays.stream(classpath.split(java.io.File.pathSeparator))
+        .filter(entry -> entry != null && !entry.isBlank())
+        .distinct()
+        .toList();
+  }
+
+  private static Path currentJdkHome() {
+    String javaHome = System.getProperty("java.home");
+    return javaHome == null || javaHome.isBlank() ? null : Path.of(javaHome);
   }
 }
