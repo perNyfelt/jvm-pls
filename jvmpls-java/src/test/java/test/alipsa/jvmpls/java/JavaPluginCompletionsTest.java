@@ -129,6 +129,36 @@ class JavaPluginCompletionsTest {
     }
   }
 
+  @Test
+  void completes_members_from_external_receiver_type() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-java-complete4");
+
+    Path main = dir.resolve("Main.java");
+    String mainCode = """
+      package demo;
+      import java.util.List;
+      class Main {
+        List<String> names;
+        void m() {
+          names.st/*caret*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      Position pos = positionAtMarker(mainCode, "/*caret*/");
+      List<CompletionItem> items = server.completions(mainUri, pos);
+
+      CompletionItem stream = byLabel(items, "stream");
+      assertNotNull(stream, "Expected inherited Collection member 'stream' on List receiver");
+      assertEquals("java.util.stream.Stream", stream.getTypeDetail());
+    }
+  }
+
 
   // ---------- helpers ----------
 
@@ -143,6 +173,14 @@ class JavaPluginCompletionsTest {
       }
     }
     return false;
+  }
+
+  private static CompletionItem byLabel(List<CompletionItem> items, String label) {
+    if (items == null) return null;
+    for (CompletionItem it : items) {
+      if (it != null && label.equals(it.getLabel())) return it;
+    }
+    return null;
   }
 
   /** Convert the index of a marker to a Position (line/column), where Position points to the marker start. */

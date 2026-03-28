@@ -137,6 +137,36 @@ class GroovyPluginCompletionsTest {
     }
   }
 
+  @Test
+  void completes_members_from_external_receiver_type() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-groovy-complete4");
+
+    Path main = dir.resolve("Main.groovy");
+    String mainCode = """
+      package demo
+      import java.util.List
+      class Main {
+        List<String> names = []
+        void run() {
+          names.ad/*caret*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      Position pos = positionAtMarker(mainCode, "/*caret*/");
+      List<CompletionItem> items = server.completions(mainUri, pos);
+
+      CompletionItem add = byLabel(items, "add");
+      assertNotNull(add, "Expected external List member 'add' on List receiver");
+      assertEquals("boolean", add.getTypeDetail());
+    }
+  }
+
 
   // ---------- helpers ----------
 

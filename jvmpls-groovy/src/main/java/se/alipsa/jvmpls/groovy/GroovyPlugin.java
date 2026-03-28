@@ -4,15 +4,25 @@ import se.alipsa.jvmpls.core.CoreQuery;
 import se.alipsa.jvmpls.core.JvmLangPlugin;
 import se.alipsa.jvmpls.core.SymbolReporter;
 import se.alipsa.jvmpls.core.model.*;
+import se.alipsa.jvmpls.core.types.ArrayType;
+import se.alipsa.jvmpls.core.types.ClassType;
+import se.alipsa.jvmpls.core.types.DynamicType;
+import se.alipsa.jvmpls.core.types.JvmType;
+import se.alipsa.jvmpls.core.types.JvmTypes;
+import se.alipsa.jvmpls.core.types.MethodSignature;
+import se.alipsa.jvmpls.core.types.PrimitiveType;
 
+import org.codehaus.groovy.ast.ClassCodeVisitorSupport;
 import org.codehaus.groovy.ast.*;
 import org.codehaus.groovy.ast.builder.AstBuilder;
 import org.codehaus.groovy.control.CompilePhase;
 import org.codehaus.groovy.control.MultipleCompilationErrorsException;
+import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.control.messages.Message;
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage;
 import org.codehaus.groovy.syntax.SyntaxException;
 
+import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
@@ -38,6 +48,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     final List<String> singleImports = new ArrayList<>(); // a.b.C
     final List<String> starImports   = new ArrayList<>(); // a.b (package)
     final Map<String,String> aliasToFqn = new HashMap<>(); // alias -> FQN
+    String primaryClassFqn = "";
   }
 
   private final Map<String, FileCtx> ctxByUri = new ConcurrentHashMap<>();
@@ -53,6 +64,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     contentByUri.put(fileUri, content);
     var diags = new ArrayList<Diagnostic>();
     var fileCtx = new FileCtx();
+    hydrateCtxFromSource(fileCtx, content);
 
     try {
       // Parse to at least CONVERSION so ClassNode/MethodNode are populated.
@@ -221,12 +233,19 @@ public final class GroovyPlugin implements JvmLangPlugin {
         if (!simple.startsWith(simplePrefix)) continue;
 
         // visible if same-pkg, single-import, alias, star-import (ctx) OR a raw "import pkg.*" line exists
-        boolean visible  = isTypeVisibleInFile(fqn, ctx) || starVisibleForTypedPkg;
-        boolean needEdit = !visible;
+      boolean visible  = isTypeVisibleInFile(fqn, ctx) || starVisibleForTypedPkg;
+      boolean needEdit = !visible;
 
-        add(out, s, needEdit ? content : null); // attach auto-import only when NOT visible
+      add(out, s, needEdit ? content : null); // attach auto-import only when NOT visible
+    }
+      if (!out.isEmpty()) {
+        return List.copyOf(out.values());
       }
-      return List.copyOf(out.values());
+
+      collectMembersFromReceiver(core, qualifierOf(prefix), simplePrefix, ctx.primaryClassFqn, out);
+      if (!out.isEmpty()) {
+        return List.copyOf(out.values());
+      }
     }
 
     // ----- undotted prefix: e.g. "Ba" -----
@@ -296,20 +315,49 @@ public final class GroovyPlugin implements JvmLangPlugin {
     boolean isAnno      = cn.isAnnotationDefinition();
 
     reporter.reportClass(fqn, new Location(fileUri, toRange(cn)), isInterface, isEnum, isAnno);
+    if (ctx.primaryClassFqn.isBlank()) {
+      ctx.primaryClassFqn = fqn;
+    }
 
     // Methods
     for (MethodNode mn : cn.getMethods()) {
       if (mn.getDeclaringClass() != cn) continue;
-      reporter.reportMethod(fqn, mn.getName(), methodSig(mn), new Location(fileUri, toRange(mn)));
+      reporter.reportMethod(fqn, mn.getName(), methodSig(mn, ctx), new Location(fileUri, toRange(mn)),
+          modifiers(mn.getModifiers()));
     }
     // Fields
     for (FieldNode fn : cn.getFields()) {
       if (fn.getDeclaringClass() != cn) continue;
-      reporter.reportField(fqn, fn.getName(), typeName(fn.getType()), new Location(fileUri, toRange(fn)));
+      reporter.reportField(fqn, fn.getName(), typeOf(fn.getType(), ctx), new Location(fileUri, toRange(fn)),
+          modifiers(fn.getModifiers()));
     }
     // Groovy properties as fields
     for (PropertyNode pn : cn.getProperties()) {
-      reporter.reportField(fqn, pn.getName(), typeName(pn.getType()), new Location(fileUri, toRange(pn)));
+      reporter.reportField(fqn, pn.getName(), typeOf(pn.getType(), ctx), new Location(fileUri, toRange(pn)),
+          modifiers(pn.getModifiers()));
+    }
+
+    // Script-scope typed variables behave like fields for completion purposes.
+    if (cn.isScript()) {
+      new ClassCodeVisitorSupport() {
+        @Override
+        protected SourceUnit getSourceUnit() {
+          return null;
+        }
+
+        @Override
+        public void visitDeclarationExpression(org.codehaus.groovy.ast.expr.DeclarationExpression expression) {
+          org.codehaus.groovy.ast.expr.Expression left = expression.getLeftExpression();
+          if (left instanceof org.codehaus.groovy.ast.expr.VariableExpression variableExpression) {
+            ClassNode originType = variableExpression.getOriginType();
+            if (originType != null && !variableExpression.isDynamicTyped()) {
+              reporter.reportField(fqn, variableExpression.getName(), typeOf(originType, ctx),
+                  new Location(fileUri, toRange(expression)), Set.of());
+            }
+          }
+          super.visitDeclarationExpression(expression);
+        }
+      }.visitClass(cn);
     }
   }
 
@@ -333,20 +381,69 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private static int safeZero(int x) { return Math.max(x, 0); }
 
-  private static String methodSig(MethodNode mn) {
-    StringBuilder sb = new StringBuilder("(");
-    boolean first = true;
-    for (Parameter p : mn.getParameters()) {
-      if (!first) sb.append(",");
-      sb.append(typeName(p.getType()));
-      first = false;
+  private static MethodSignature methodSig(MethodNode mn, FileCtx ctx) {
+    List<JvmType> parameterTypes = new ArrayList<>();
+    List<String> parameterNames = new ArrayList<>();
+    for (Parameter parameter : mn.getParameters()) {
+      parameterTypes.add(typeOf(parameter.getType(), ctx));
+      parameterNames.add(parameter.getName());
     }
-    sb.append(")");
-    return sb.toString() + typeName(mn.getReturnType());
+    return new MethodSignature(parameterTypes, typeOf(mn.getReturnType(), ctx),
+        parameterNames, List.of(), List.of(), modifiers(mn.getModifiers()));
   }
 
   private static String typeName(ClassNode t) {
     return t == null ? "java.lang.Object" : t.getName();
+  }
+
+  private static JvmType typeOf(ClassNode node, FileCtx ctx) {
+    if (node == null) {
+      return DynamicType.INSTANCE;
+    }
+    if (node.isArray()) {
+      return new ArrayType(typeOf(node.getComponentType(), ctx));
+    }
+    if (node == ClassHelper.DYNAMIC_TYPE) {
+      return DynamicType.INSTANCE;
+    }
+    String name = node.getName();
+    if (JvmTypes.isPrimitive(name)) {
+      return new PrimitiveType(name);
+    }
+    List<JvmType> typeArguments = node.getGenericsTypes() == null ? List.of() : Arrays.stream(node.getGenericsTypes())
+        .map(genericsType -> {
+          if (genericsType.isWildcard()) {
+            return DynamicType.INSTANCE;
+          }
+          ClassNode type = genericsType.getType();
+          return type == null ? DynamicType.INSTANCE : typeOf(type, ctx);
+        })
+        .toList();
+    return new ClassType(resolveTypeName(name, ctx), typeArguments);
+  }
+
+  private static String resolveTypeName(String name, FileCtx ctx) {
+    if (name == null || name.isBlank() || name.contains(".")) {
+      return name;
+    }
+    for (String imported : ctx.singleImports) {
+      if (imported.endsWith("." + name)) {
+        return imported;
+      }
+    }
+    String aliasTarget = ctx.aliasToFqn.get(name);
+    if (aliasTarget != null) {
+      return aliasTarget;
+    }
+    for (String pkg : ctx.starImports) {
+      return normPkg(pkg) + "." + name;
+    }
+    for (String pkg : DEFAULT_STAR_IMPORTS) {
+      if ("java.lang".equals(pkg)) {
+        return pkg + "." + name;
+      }
+    }
+    return (ctx.pkg == null || ctx.pkg.isBlank()) ? name : ctx.pkg + "." + name;
   }
 
   private static String simpleName(String fqn) {
@@ -378,6 +475,19 @@ public final class GroovyPlugin implements JvmLangPlugin {
     var edits = (content == null) ? java.util.List.<se.alipsa.jvmpls.core.model.TextEdit>of()
         : maybeImportEdit(content, fqn);
     out.put(fqn, new CompletionItem(simple, fqn, simple, s.getLocation(), edits));
+  }
+
+  private static void addMember(java.util.Map<String, CompletionItem> out, SymbolInfo s, String label) {
+    if (out.containsKey(s.getFqName())) return;
+    String typeDetail = s.getResolvedType() != null
+        ? s.getResolvedType().displayName()
+        : s.getMethodSignature() != null
+            ? s.getMethodSignature().returnType().displayName()
+            : s.getSignature();
+    String detail = s.getMethodSignature() != null
+        ? s.getContainerFqName() + JvmTypes.toLegacyMethodSignature(s.getMethodSignature())
+        : s.getContainerFqName();
+    out.put(s.getFqName(), new CompletionItem(label, detail, label, s.getLocation(), List.of(), typeDetail));
   }
 
   // Backward-compat for places that don't care about edits
@@ -451,6 +561,31 @@ public final class GroovyPlugin implements JvmLangPlugin {
     }
   }
 
+  private static void collectMembersFromReceiver(CoreQuery core, String receiver, String memberPrefix,
+                                                 String currentOwnerFqn,
+                                                 java.util.Map<String, CompletionItem> out) {
+    if (currentOwnerFqn == null || currentOwnerFqn.isBlank()) {
+      return;
+    }
+    for (SymbolInfo symbol : core.membersOf(currentOwnerFqn)) {
+      if (symbol.getKind() != SymbolInfo.Kind.FIELD) {
+        continue;
+      }
+      if (!receiver.equals(memberName(symbol))) {
+        continue;
+      }
+      if (symbol.getResolvedType() instanceof ClassType classType) {
+        for (SymbolInfo member : core.membersOf(classType.fqName())) {
+          String name = memberName(member);
+          if (name.startsWith(memberPrefix) && isVisible(member, currentOwnerFqn)) {
+            addMember(out, member, name);
+          }
+        }
+      }
+      return;
+    }
+  }
+
   private static String completionPrefix(String content, Position pos) {
     int offset = se.alipsa.jvmpls.core.TokenUtil.positionToOffset(content, pos.line, pos.column);
     int i = Math.max(0, Math.min(offset, content.length()));
@@ -461,6 +596,11 @@ public final class GroovyPlugin implements JvmLangPlugin {
       s--;
     }
     return content.substring(s, i);
+  }
+
+  private static String qualifierOf(String prefix) {
+    int lastDot = prefix.lastIndexOf('.');
+    return lastDot < 0 ? prefix : prefix.substring(0, lastDot);
   }
 
   private static String ownerPkg(String fqn) {
@@ -481,11 +621,51 @@ public final class GroovyPlugin implements JvmLangPlugin {
     return i < 0 ? "" : fqn.substring(0, i);
   }
 
+  private static String memberName(SymbolInfo symbol) {
+    String fqn = symbol.getFqName();
+    int hash = fqn.lastIndexOf('#');
+    if (hash >= 0) {
+      String suffix = fqn.substring(hash + 1);
+      int open = suffix.indexOf('(');
+      return open >= 0 ? suffix.substring(0, open) : suffix;
+    }
+    return simpleName(fqn);
+  }
+
+  private static Set<String> modifiers(int flags) {
+    LinkedHashSet<String> out = new LinkedHashSet<>();
+    if (Modifier.isPublic(flags)) out.add("public");
+    if (Modifier.isProtected(flags)) out.add("protected");
+    if (Modifier.isPrivate(flags)) out.add("private");
+    if (Modifier.isAbstract(flags)) out.add("abstract");
+    if (Modifier.isFinal(flags)) out.add("final");
+    if (Modifier.isStatic(flags)) out.add("static");
+    return Set.copyOf(out);
+  }
+
+  private static boolean isVisible(SymbolInfo member, String currentOwnerFqn) {
+    Set<String> modifiers = member.getModifiers();
+    if (modifiers == null || modifiers.isEmpty()) {
+      return true;
+    }
+    if (member.getContainerFqName().equals(currentOwnerFqn)) {
+      return true;
+    }
+    return !modifiers.contains("private");
+  }
+
   /** Build/augment ctx if parse failed earlier */
   private FileCtx ensureCtx(String fileUri, String content) {
     FileCtx ctx = ctxByUri.get(fileUri);
     if (ctx == null) ctx = new FileCtx();
 
+    hydrateCtxFromSource(ctx, content);
+
+    ctxByUri.put(fileUri, ctx);
+    return ctx;
+  }
+
+  private static void hydrateCtxFromSource(FileCtx ctx, String content) {
     if (ctx.pkg == null || ctx.pkg.isBlank()) {
       var pm = PKG_DECL.matcher(content);
       if (pm.find()) ctx.pkg = pm.group(1);
@@ -508,9 +688,6 @@ public final class GroovyPlugin implements JvmLangPlugin {
         }
       }
     }
-
-    ctxByUri.put(fileUri, ctx);
-    return ctx;
   }
 
   /** True if fqn already visible in file by package, single import, alias, or star import (incl. Groovy defaults). */

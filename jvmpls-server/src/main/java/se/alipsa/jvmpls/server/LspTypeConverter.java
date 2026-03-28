@@ -86,7 +86,12 @@ public final class LspTypeConverter {
 
   public static org.eclipse.lsp4j.CompletionItem toLsp(se.alipsa.jvmpls.core.model.CompletionItem core) {
     org.eclipse.lsp4j.CompletionItem lsp = new org.eclipse.lsp4j.CompletionItem(core.getLabel());
-    lsp.setDetail(core.getDetail());
+    String detail = core.getDetail();
+    String typeDetail = core.getTypeDetail();
+    if (typeDetail != null && !typeDetail.isBlank()) {
+      detail = (detail == null || detail.isBlank()) ? typeDetail : detail + " : " + typeDetail;
+    }
+    lsp.setDetail(detail);
     lsp.setInsertText(core.getInsertText());
     List<se.alipsa.jvmpls.core.model.TextEdit> edits = core.getAdditionalTextEdits();
     if (edits != null && !edits.isEmpty()) {

@@ -6,18 +6,26 @@ public final class CompletionItem {
   private final String insertText;    // what to insert; defaults to label
   private final Location location;    // optional: where the symbol is declared
   private final java.util.List<TextEdit> additionalTextEdits;
+  private final String typeDetail;
 
   public CompletionItem(String label, String detail, String insertText, Location loc) {
-    this(label, detail, insertText, loc, java.util.List.of());
+    this(label, detail, insertText, loc, java.util.List.of(), "");
   }
 
   public CompletionItem(String label, String detail, String insertText, Location loc,
                         java.util.List<TextEdit> additionalTextEdits) {
+    this(label, detail, insertText, loc, additionalTextEdits, "");
+  }
+
+  public CompletionItem(String label, String detail, String insertText, Location loc,
+                        java.util.List<TextEdit> additionalTextEdits,
+                        String typeDetail) {
     this.label = label;
     this.detail = detail;
     this.insertText = insertText;
     this.location = loc;
     this.additionalTextEdits = additionalTextEdits;
+    this.typeDetail = typeDetail == null ? "" : typeDetail;
   }
 
   public java.util.List<TextEdit> getAdditionalTextEdits() {
@@ -38,5 +46,9 @@ public final class CompletionItem {
 
   public Location getLocation() {
     return location;
+  }
+
+  public String getTypeDetail() {
+    return typeDetail;
   }
 }

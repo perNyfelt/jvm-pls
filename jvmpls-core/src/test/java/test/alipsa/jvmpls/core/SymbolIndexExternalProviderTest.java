@@ -86,6 +86,55 @@ class SymbolIndexExternalProviderTest {
         index.allInPackage("java.util").getFirst().getLocation().getUri());
   }
 
+  @Test
+  void membersOf_fallsBackToProviderAndCachesResults() {
+    SymbolIndex index = new SymbolIndex();
+    AtomicInteger memberLookups = new AtomicInteger();
+    index.registerProvider(new SymbolProvider() {
+      @Override
+      public Optional<SymbolInfo> findByFqn(String fqn) {
+        return Optional.empty();
+      }
+
+      @Override
+      public List<SymbolInfo> findBySimpleName(String simpleName) {
+        return List.of();
+      }
+
+      @Override
+      public List<SymbolInfo> membersOf(String ownerFqn) {
+        memberLookups.incrementAndGet();
+        if (!"java.util.List".equals(ownerFqn)) {
+          return List.of();
+        }
+        return List.of(
+            new SymbolInfo("binary", SymbolInfo.Kind.METHOD, "java.util.List#add(java.lang.Object)boolean",
+                "java.util.List",
+                new Location("jrt:/java.base/java/util/List.class",
+                    new Range(new Position(0, 0), new Position(0, 1))),
+                "(java.lang.Object)boolean",
+                Set.of("public"),
+                List.of()),
+            new SymbolInfo("binary", SymbolInfo.Kind.METHOD, "java.util.List#clear()void",
+                "java.util.List",
+                new Location("jrt:/java.base/java/util/List.class",
+                    new Range(new Position(0, 0), new Position(0, 1))),
+                "()void",
+                Set.of("public"),
+                List.of()));
+      }
+
+      @Override
+      public List<SymbolInfo> allInPackage(String pkgFqn) {
+        return List.of();
+      }
+    });
+
+    assertEquals(2, index.membersOf("java.util.List").size());
+    assertEquals(2, index.membersOf("java.util.List").size());
+    assertEquals(1, memberLookups.get(), "provider member lookup should be cached");
+  }
+
   private static SymbolInfo symbol(String fqn) {
     return new SymbolInfo(
         "binary",

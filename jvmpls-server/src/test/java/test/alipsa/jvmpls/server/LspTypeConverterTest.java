@@ -172,6 +172,20 @@ class LspTypeConverterTest {
     assertEquals("import Foo;\n", lsp.getAdditionalTextEdits().get(0).getNewText());
   }
 
+  @Test
+  void toLspCompletionItemIncludesTypeDetailInDetail() {
+    var range = new se.alipsa.jvmpls.core.model.Range(
+        new se.alipsa.jvmpls.core.model.Position(0, 0),
+        new se.alipsa.jvmpls.core.model.Position(0, 0));
+    var loc = new se.alipsa.jvmpls.core.model.Location("file:///A.java", range);
+    var core = new se.alipsa.jvmpls.core.model.CompletionItem(
+        "add", "java.util.List(java.lang.Object)boolean", "add", loc, List.of(), "boolean");
+
+    org.eclipse.lsp4j.CompletionItem lsp = LspTypeConverter.toLsp(core);
+
+    assertEquals("java.util.List(java.lang.Object)boolean : boolean", lsp.getDetail());
+  }
+
   // -------------------------------------------------------------------------
   // Batch conversions
   // -------------------------------------------------------------------------

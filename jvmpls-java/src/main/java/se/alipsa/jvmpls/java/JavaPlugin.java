@@ -4,8 +4,13 @@ import se.alipsa.jvmpls.core.CoreQuery;
 import se.alipsa.jvmpls.core.JvmLangPlugin;
 import se.alipsa.jvmpls.core.SymbolReporter;
 import se.alipsa.jvmpls.core.model.*;
+import se.alipsa.jvmpls.core.types.ClassType;
+import se.alipsa.jvmpls.core.types.JvmType;
+import se.alipsa.jvmpls.core.types.JvmTypes;
+import se.alipsa.jvmpls.core.types.MethodSignature;
 
 import javax.tools.*;
+import javax.lang.model.element.Modifier;
 import com.sun.source.tree.*;
 import com.sun.source.util.*;
 import se.alipsa.jvmpls.core.model.Diagnostic;
@@ -14,6 +19,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 public final class JavaPlugin implements JvmLangPlugin {
@@ -23,6 +29,8 @@ public final class JavaPlugin implements JvmLangPlugin {
 
   private static final java.util.regex.Pattern PKG =
       Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
+  private static final java.util.regex.Pattern CLASS_DECL =
+      Pattern.compile("\\b(?:class|interface|enum|record)\\s+(\\w+)\\b");
   private static final java.util.regex.Pattern IMPORT =
       // Capture both single-type and on-demand imports:
       // group(1) examples: "a.b.C", "a.b.*"
@@ -52,12 +60,14 @@ public final class JavaPlugin implements JvmLangPlugin {
 
       for (CompilationUnitTree cu : task.parse()) {
         String pkg = cu.getPackageName() == null ? "" : cu.getPackageName().toString();
+        List<String> visibleImports = visibleImports(cu);
         if (!pkg.isEmpty()) {
           reporter.reportPackage(pkg, new Location(fileUri, new Range(new Position(0, 0), new Position(0, 1))));
         }
 
         cu.accept(new TreeScanner<Void, Void>() {
           String owner; // current enclosing FQN
+          int methodDepth;
 
           @Override public Void visitClass(ClassTree node, Void p) {
             String simple = node.getSimpleName().toString();
@@ -82,18 +92,26 @@ public final class JavaPlugin implements JvmLangPlugin {
           }
 
           @Override public Void visitMethod(MethodTree node, Void p) {
+            methodDepth++;
             if (owner != null) {
-              reporter.reportMethod(owner, node.getName().toString(), methodSig(node),
-                  new Location(fileUri, toRange(cu, node, trees)));
+              reporter.reportMethod(owner, node.getName().toString(),
+                  methodSig(node, pkg, visibleImports), new Location(fileUri, toRange(cu, node, trees)),
+                  modifiers(node.getModifiers().getFlags()));
             }
-            return super.visitMethod(node, p);
+            try {
+              return super.visitMethod(node, p);
+            } finally {
+              methodDepth--;
+            }
           }
 
           @Override public Void visitVariable(VariableTree node, Void p) {
-            if (owner != null && node.getName() != null) {
-              String type = (node.getType() == null) ? "java.lang.Object" : node.getType().toString();
+            if (owner != null && methodDepth == 0 && node.getName() != null) {
+              JvmType type = resolveType(node.getType() == null ? "java.lang.Object" : node.getType().toString(),
+                  pkg, visibleImports);
               reporter.reportField(owner, node.getName().toString(), type,
-                  new Location(fileUri, toRange(cu, node, trees)));
+                  new Location(fileUri, toRange(cu, node, trees)),
+                  modifiers(node.getModifiers().getFlags()));
             }
             return super.visitVariable(node, p);
           }
@@ -180,9 +198,16 @@ public final class JavaPlugin implements JvmLangPlugin {
     // 1) Dotted prefix => collect by explicit package
     int lastDot = prefix.lastIndexOf('.');
     if (lastDot >= 0) {
-      String pkg = prefix.substring(0, lastDot);
+      String qualifier = prefix.substring(0, lastDot);
       String simplePrefix = prefix.substring(lastDot + 1);
-      collectTypesFromPackage(core, pkg, simplePrefix, content, out);
+      int before = out.size();
+      collectTypesFromPackage(core, qualifier, simplePrefix, content, out);
+      if (out.size() == before) {
+        collectMembersFromReceiver(core, qualifier, simplePrefix, content, out);
+      }
+      if (!out.isEmpty()) {
+        return List.copyOf(out.values());
+      }
     }
 
     // 2) Undotted OR fallback: visible types (same pkg + imports + defaults)
@@ -225,17 +250,17 @@ public final class JavaPlugin implements JvmLangPlugin {
     return new Range(new Position(sl, sc), new Position(el, ec));
   }
 
-  private static String methodSig(MethodTree mt) {
-    StringBuilder sb = new StringBuilder("(");
-    boolean first = true;
-    for (var p : mt.getParameters()) {
-      if (!first) sb.append(",");
-      sb.append(p.getType() == null ? "java.lang.Object" : p.getType().toString());
-      first = false;
+  private static MethodSignature methodSig(MethodTree mt, String pkg, List<String> visibleImports) {
+    List<JvmType> parameterTypes = new ArrayList<>();
+    List<String> parameterNames = new ArrayList<>();
+    for (var parameter : mt.getParameters()) {
+      parameterTypes.add(resolveType(parameter.getType() == null ? "java.lang.Object" : parameter.getType().toString(),
+          pkg, visibleImports));
+      parameterNames.add(parameter.getName().toString());
     }
-    sb.append(")");
-    String ret = mt.getReturnType() == null ? "void" : mt.getReturnType().toString();
-    return sb + ret;
+    JvmType returnType = resolveType(mt.getReturnType() == null ? "void" : mt.getReturnType().toString(),
+        pkg, visibleImports);
+    return new MethodSignature(parameterTypes, returnType, parameterNames, List.of(), List.of(), Set.of());
   }
 
   // tiny helpers
@@ -248,11 +273,48 @@ public final class JavaPlugin implements JvmLangPlugin {
     return i < 0 ? fqn : fqn.substring(i + 1);
   }
 
+  private static String memberName(SymbolInfo symbol) {
+    String fqn = symbol.getFqName();
+    int hash = fqn.lastIndexOf('#');
+    if (hash >= 0) {
+      String suffix = fqn.substring(hash + 1);
+      int open = suffix.indexOf('(');
+      return open >= 0 ? suffix.substring(0, open) : suffix;
+    }
+    return simpleName(fqn);
+  }
+
   private static boolean isType(SymbolInfo s) {
     return switch (s.getKind()) {
       case CLASS, INTERFACE, ENUM, ANNOTATION -> true;
       default -> false;
     };
+  }
+
+  private static void collectMembersFromReceiver(CoreQuery core, String receiver, String memberPrefix,
+                                                 String content, java.util.Map<String, CompletionItem> out) {
+    String ownerClass = primaryClassFqn(content);
+    if (ownerClass == null) {
+      return;
+    }
+    for (SymbolInfo symbol : core.membersOf(ownerClass)) {
+      if (symbol.getKind() != SymbolInfo.Kind.FIELD) {
+        continue;
+      }
+      if (!receiver.equals(memberName(symbol))) {
+        continue;
+      }
+      JvmType resolvedType = symbol.getResolvedType();
+      if (resolvedType instanceof ClassType classType) {
+        for (SymbolInfo member : core.membersOf(classType.fqName())) {
+          String name = memberName(member);
+          if (name.startsWith(memberPrefix) && isVisible(member, ownerClass)) {
+            addMember(out, member, name);
+          }
+        }
+      }
+      return;
+    }
   }
 
   private static void collectTypesFromPackage(CoreQuery core, String pkg, String simplePrefix,
@@ -274,6 +336,19 @@ public final class JavaPlugin implements JvmLangPlugin {
     var edits = (content == null) ? java.util.List.<se.alipsa.jvmpls.core.model.TextEdit>of()
         : maybeImportEdit(content, fqn); // your auto-import builder
     out.put(fqn, new CompletionItem(simple, fqn, simple, s.getLocation(), edits));
+  }
+
+  private static void addMember(java.util.Map<String, CompletionItem> out, SymbolInfo s, String label) {
+    if (out.containsKey(s.getFqName())) return;
+    String typeDetail = s.getResolvedType() != null
+        ? s.getResolvedType().displayName()
+        : s.getMethodSignature() != null
+            ? s.getMethodSignature().returnType().displayName()
+            : s.getSignature();
+    String detail = s.getMethodSignature() != null
+        ? s.getContainerFqName() + JvmTypes.toLegacyMethodSignature(s.getMethodSignature())
+        : s.getContainerFqName();
+    out.put(s.getFqName(), new CompletionItem(label, detail, label, s.getLocation(), List.of(), typeDetail));
   }
   private static void add(java.util.Map<String, CompletionItem> out, SymbolInfo s) {
     add(out, s, null);
@@ -328,6 +403,74 @@ public final class JavaPlugin implements JvmLangPlugin {
     String sep = (insertAt == 0) ? "" : (content.charAt(insertAt - 1) == '\n' ? "" : "\n");
     String text = sep + "import " + fqn + ";\n";
     return java.util.List.of(new TextEdit(r, text));
+  }
+
+  private static List<String> visibleImports(CompilationUnitTree cu) {
+    List<String> imports = new ArrayList<>(JAVA_DEFAULT_STAR_IMPORTS.stream()
+        .map(pkg -> pkg + ".*")
+        .toList());
+    for (ImportTree importTree : cu.getImports()) {
+      String imported = importTree.getQualifiedIdentifier().toString();
+      if (importTree.isStatic()) {
+        continue;
+      }
+      imports.add(imported);
+    }
+    return imports;
+  }
+
+  private static JvmType resolveType(String rawType, String pkg, List<String> visibleImports) {
+    return JvmTypes.fromSource(rawType, simpleName -> resolveImportedTypeName(simpleName, pkg, visibleImports));
+  }
+
+  private static String resolveImportedTypeName(String simpleName, String pkg, List<String> visibleImports) {
+    if (simpleName == null || simpleName.isBlank() || simpleName.contains(".")) {
+      return simpleName;
+    }
+    if (JvmTypes.isPrimitive(simpleName) || "void".equals(simpleName)) {
+      return simpleName;
+    }
+    for (String visibleImport : visibleImports) {
+      if (!visibleImport.endsWith(".*") && visibleImport.endsWith("." + simpleName)) {
+        return visibleImport;
+      }
+    }
+    for (String visibleImport : visibleImports) {
+      if (visibleImport.endsWith(".*") && !"java.lang.*".equals(visibleImport)) {
+        return visibleImport.substring(0, visibleImport.length() - 2) + "." + simpleName;
+      }
+    }
+    if (visibleImports.contains("java.lang.*")) {
+      return "java.lang." + simpleName;
+    }
+    return (pkg == null || pkg.isBlank()) ? simpleName : pkg + "." + simpleName;
+  }
+
+  private static Set<String> modifiers(Set<Modifier> flags) {
+    return flags.stream()
+        .map(flag -> flag.name().toLowerCase(Locale.ROOT))
+        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  private static String primaryClassFqn(String content) {
+    String pkg = find(PKG, content);
+    var matcher = CLASS_DECL.matcher(content);
+    if (!matcher.find()) {
+      return null;
+    }
+    String simple = matcher.group(1);
+    return (pkg == null || pkg.isBlank()) ? simple : pkg + "." + simple;
+  }
+
+  private static boolean isVisible(SymbolInfo member, String currentOwner) {
+    Set<String> modifiers = member.getModifiers();
+    if (modifiers == null || modifiers.isEmpty()) {
+      return true;
+    }
+    if (member.getContainerFqName().equals(currentOwner)) {
+      return true;
+    }
+    return !modifiers.contains("private");
   }
 
 }

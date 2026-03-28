@@ -13,6 +13,7 @@ public final class SymbolIndex implements CoreQuery {
   private final Map<String, Optional<SymbolInfo>> providerByFqnCache = new ConcurrentHashMap<>();
   private final Map<String, List<SymbolInfo>> providerBySimpleNameCache = new ConcurrentHashMap<>();
   private final Map<String, List<SymbolInfo>> providerByPackageCache = new ConcurrentHashMap<>();
+  private final Map<String, List<SymbolInfo>> providerByOwnerCache = new ConcurrentHashMap<>();
 
   public void put(String fileUri, SymbolInfo sym) {
     byFqn.put(sym.getFqName(), sym);
@@ -25,6 +26,7 @@ public final class SymbolIndex implements CoreQuery {
     providerByFqnCache.clear();
     providerBySimpleNameCache.clear();
     providerByPackageCache.clear();
+    providerByOwnerCache.clear();
   }
 
   public void removeFile(String fileUri) {
@@ -66,17 +68,26 @@ public final class SymbolIndex implements CoreQuery {
     }
     for (SymbolInfo sym : byFqn.values()) {
       String fqn = sym.getFqName();
-      int lastDot = fqn.lastIndexOf('.');
-      int lastHash = fqn.lastIndexOf('#');
-      int lastSep = Math.max(lastDot, lastHash);
-      String name = fqn.substring(lastSep + 1);
-      // for methods, fqn contains signature, so strip it
-      int openParen = name.indexOf('(');
-      if (openParen > 0) {
-        name = name.substring(0, openParen);
-      }
+      String name = simpleNameOf(sym);
       if (name.equals(simpleName)) {
         results.put(sym.getFqName(), sym);
+      }
+    }
+    return List.copyOf(results.values());
+  }
+
+  @Override
+  public List<SymbolInfo> membersOf(String ownerFqn) {
+    if (ownerFqn == null || ownerFqn.isBlank()) {
+      return List.of();
+    }
+    Map<String, SymbolInfo> results = new LinkedHashMap<>();
+    for (SymbolInfo external : providerByOwnerCache.computeIfAbsent(ownerFqn, this::resolveExternalMembers)) {
+      results.put(external.getFqName(), external);
+    }
+    for (SymbolInfo symbol : byFqn.values()) {
+      if (ownerFqn.equals(symbol.getContainerFqName())) {
+        results.put(symbol.getFqName(), symbol);
       }
     }
     return List.copyOf(results.values());
@@ -116,5 +127,30 @@ public final class SymbolIndex implements CoreQuery {
       }
     }
     return List.copyOf(results.values());
+  }
+
+  private List<SymbolInfo> resolveExternalMembers(String ownerFqn) {
+    Map<String, SymbolInfo> results = new LinkedHashMap<>();
+    synchronized (providers) {
+      for (SymbolProvider provider : providers) {
+        for (SymbolInfo symbol : provider.membersOf(ownerFqn)) {
+          results.putIfAbsent(symbol.getFqName(), symbol);
+        }
+      }
+    }
+    return List.copyOf(results.values());
+  }
+
+  private static String simpleNameOf(SymbolInfo symbol) {
+    String fqn = symbol.getFqName();
+    int lastDot = fqn.lastIndexOf('.');
+    int lastHash = fqn.lastIndexOf('#');
+    int lastSep = Math.max(lastDot, lastHash);
+    String name = fqn.substring(lastSep + 1);
+    int openParen = name.indexOf('(');
+    if (openParen > 0) {
+      name = name.substring(0, openParen);
+    }
+    return name;
   }
 }
