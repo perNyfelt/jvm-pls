@@ -3,6 +3,7 @@ package se.alipsa.jvmpls.server;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.services.*;
 import se.alipsa.jvmpls.core.CoreFacade;
+import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.server.CoreServer;
 import se.alipsa.jvmpls.core.server.DiagnosticsPublisher;
 
@@ -38,8 +39,9 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
   public JvmPlsLanguageServer(CoreFacade core, AutoCloseable coreLifecycle, IntConsumer processExit) {
     this.coreLifecycle = Objects.requireNonNull(coreLifecycle, "coreLifecycle");
     this.diagnosticsPublisher = new ClientDiagnosticsPublisher();
-    this.textDocumentService = new JvmPlsTextDocumentService(Objects.requireNonNull(core, "core"));
-    this.workspaceService = new JvmPlsWorkspaceService();
+    CoreFacade publishingCore = publishDiagnosticsFrom(Objects.requireNonNull(core, "core"), diagnosticsPublisher);
+    this.textDocumentService = new JvmPlsTextDocumentService(publishingCore, this::acceptingRequests);
+    this.workspaceService = new JvmPlsWorkspaceService(this::acceptingRequests);
     this.processExit = Objects.requireNonNull(processExit, "processExit");
   }
 
@@ -47,8 +49,8 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
                                IntConsumer processExit) {
     CoreServer coreServer = CoreServer.createDefault(diagnosticsPublisher);
     this.coreLifecycle = coreServer;
-    this.textDocumentService = new JvmPlsTextDocumentService(coreServer);
-    this.workspaceService = new JvmPlsWorkspaceService();
+    this.textDocumentService = new JvmPlsTextDocumentService(coreServer, this::acceptingRequests);
+    this.workspaceService = new JvmPlsWorkspaceService(this::acceptingRequests);
     this.diagnosticsPublisher = diagnosticsPublisher;
     this.processExit = Objects.requireNonNull(processExit, "processExit");
   }
@@ -73,7 +75,7 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
     capabilities.setDefinitionProvider(true);
 
     InitializeResult result = new InitializeResult(capabilities);
-    result.setServerInfo(new ServerInfo("jvm-pls", "1.0.0-SNAPSHOT"));
+    result.setServerInfo(new ServerInfo(ServerMetadata.NAME, ServerMetadata.VERSION));
 
     return CompletableFuture.completedFuture(result);
   }
@@ -113,6 +115,54 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
   @Override
   public WorkspaceService getWorkspaceService() {
     return workspaceService;
+  }
+
+  private boolean acceptingRequests() {
+    return !shutdownRequested;
+  }
+
+  private static CoreFacade publishDiagnosticsFrom(CoreFacade delegate,
+                                                   DiagnosticsPublisher diagnosticsPublisher) {
+    return new CoreFacade() {
+      @Override
+      public List<Diagnostic> openFile(String uri, String text) {
+        List<Diagnostic> diagnostics = delegate.openFile(uri, text);
+        diagnosticsPublisher.publish(uri, diagnostics);
+        return diagnostics;
+      }
+
+      @Override
+      public List<Diagnostic> changeFile(String uri, String text) {
+        List<Diagnostic> diagnostics = delegate.changeFile(uri, text);
+        diagnosticsPublisher.publish(uri, diagnostics);
+        return diagnostics;
+      }
+
+      @Override
+      public void closeFile(String uri) {
+        delegate.closeFile(uri);
+        diagnosticsPublisher.publish(uri, List.of());
+      }
+
+      @Override
+      public List<Diagnostic> analyze(String uri) {
+        List<Diagnostic> diagnostics = delegate.analyze(uri);
+        diagnosticsPublisher.publish(uri, diagnostics);
+        return diagnostics;
+      }
+
+      @Override
+      public List<se.alipsa.jvmpls.core.model.CompletionItem> completions(
+          String uri, se.alipsa.jvmpls.core.model.Position position) {
+        return delegate.completions(uri, position);
+      }
+
+      @Override
+      public java.util.Optional<se.alipsa.jvmpls.core.model.Location> definition(
+          String uri, se.alipsa.jvmpls.core.model.Position position) {
+        return delegate.definition(uri, position);
+      }
+    };
   }
 
   private static final class ClientDiagnosticsPublisher implements DiagnosticsPublisher {

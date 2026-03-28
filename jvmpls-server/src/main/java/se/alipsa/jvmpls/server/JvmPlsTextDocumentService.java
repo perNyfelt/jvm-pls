@@ -1,7 +1,10 @@
 package se.alipsa.jvmpls.server;
 
 import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import se.alipsa.jvmpls.core.CoreFacade;
 
@@ -9,6 +12,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BooleanSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -21,9 +25,15 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
   private static final Logger LOG = Logger.getLogger(JvmPlsTextDocumentService.class.getName());
 
   private final CoreFacade core;
+  private final BooleanSupplier acceptingRequests;
 
   public JvmPlsTextDocumentService(CoreFacade core) {
+    this(core, () -> true);
+  }
+
+  JvmPlsTextDocumentService(CoreFacade core, BooleanSupplier acceptingRequests) {
     this.core = core;
+    this.acceptingRequests = acceptingRequests;
   }
 
   // -------------------------------------------------------------------------
@@ -32,12 +42,20 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
 
   @Override
   public void didOpen(DidOpenTextDocumentParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Ignoring textDocument/didOpen after shutdown");
+      return;
+    }
     TextDocumentItem doc = params.getTextDocument();
     core.openFile(doc.getUri(), doc.getText());
   }
 
   @Override
   public void didChange(DidChangeTextDocumentParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Ignoring textDocument/didChange after shutdown");
+      return;
+    }
     String uri = params.getTextDocument().getUri();
     List<TextDocumentContentChangeEvent> changes = params.getContentChanges();
     if (changes == null || changes.isEmpty()) {
@@ -50,6 +68,10 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
 
   @Override
   public void didClose(DidCloseTextDocumentParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Ignoring textDocument/didClose after shutdown");
+      return;
+    }
     String uri = params.getTextDocument().getUri();
     core.closeFile(uri);
   }
@@ -66,6 +88,10 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(
       CompletionParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/completion after shutdown");
+      return rejectedAfterShutdown("textDocument/completion");
+    }
     return CompletableFuture.supplyAsync(() -> {
       try {
         String uri = params.getTextDocument().getUri();
@@ -85,6 +111,10 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
       DefinitionParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/definition after shutdown");
+      return rejectedAfterShutdown("textDocument/definition");
+    }
     return CompletableFuture.supplyAsync(() -> {
       try {
         String uri = params.getTextDocument().getUri();
@@ -102,5 +132,13 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
             Collections.emptyList());
       }
     });
+  }
+
+  private static <T> CompletableFuture<T> rejectedAfterShutdown(String method) {
+    return CompletableFuture.failedFuture(new ResponseErrorException(
+        new ResponseError(
+            ResponseErrorCode.InvalidRequest,
+            method + " is not available after shutdown",
+            null)));
   }
 }

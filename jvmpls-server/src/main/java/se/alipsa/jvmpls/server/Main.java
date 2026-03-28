@@ -13,7 +13,6 @@ import java.util.logging.Logger;
 public final class Main {
 
     private static final Logger LOG = Logger.getLogger(Main.class.getName());
-    private static final String VERSION = "1.0.0-SNAPSHOT";
 
     private Main() {}
 
@@ -21,7 +20,7 @@ public final class Main {
         for (String arg : args) {
             switch (arg) {
                 case "--version" -> {
-                    System.out.println("jvm-pls " + VERSION);
+                    System.out.println(ServerMetadata.NAME + " " + ServerMetadata.VERSION);
                     return;
                 }
                 case "--help" -> {
@@ -62,7 +61,7 @@ public final class Main {
     }
 
     private static void printUsage() {
-        System.out.println("Usage: java -jar jvmpls-server-" + VERSION + "-standalone.jar [options]");
+        System.out.println("Usage: java -jar " + ServerMetadata.STANDALONE_JAR + " [options]");
         System.out.println();
         System.out.println("Options:");
         System.out.println("  --stdio    Launch LSP server over stdin/stdout (default)");
