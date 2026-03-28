@@ -5,6 +5,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Immutable workspace-level build description produced by a {@link BuildToolPlugin}.
+ * It contains the source roots, classpath, modules, target JDK, and build files
+ * that the language server needs to configure external symbol resolution.
+ */
 public record BuildModel(String toolId,
                          Path projectRoot,
                          List<Path> sourceRoots,

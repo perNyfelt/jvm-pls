@@ -4,6 +4,11 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * Immutable module-level slice of a {@link BuildModel}.
+ * Module entries capture the roots, outputs, classpath, and build files that belong
+ * to a concrete subproject inside a larger workspace.
+ */
 public record BuildModule(String name,
                           Path projectRoot,
                           List<Path> sourceRoots,

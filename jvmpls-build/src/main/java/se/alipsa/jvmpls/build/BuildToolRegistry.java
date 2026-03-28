@@ -7,6 +7,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.ServiceLoader;
 
+/**
+ * Discovers and selects {@link BuildToolPlugin} implementations for a workspace.
+ */
 public final class BuildToolRegistry {
 
   private final List<BuildToolPlugin> plugins;
@@ -36,6 +39,15 @@ public final class BuildToolRegistry {
         .toList();
   }
 
+  /**
+   * Selects the build tool plugin for {@code projectRoot}.
+   * If {@code explicitId} is provided, that plugin must exist and is returned without
+   * consulting applicability. Otherwise the highest-priority applicable plugin wins,
+   * and equal-priority ambiguity is reported as an error.
+   *
+   * @return the selected plugin, or an empty result when no plugin applies
+   * @throws BuildResolutionException if the explicit id is unknown or selection is ambiguous
+   */
   public Optional<BuildToolPlugin> select(Path projectRoot, String explicitId)
       throws BuildResolutionException {
     if (explicitId != null && !explicitId.isBlank()) {
