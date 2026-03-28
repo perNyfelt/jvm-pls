@@ -25,15 +25,22 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
   private static final Logger LOG = Logger.getLogger(JvmPlsTextDocumentService.class.getName());
 
   private final CoreFacade core;
+  private final OpenDocuments openDocuments;
   private final BooleanSupplier acceptingRequests;
+  private final BooleanSupplier coreReady;
 
   public JvmPlsTextDocumentService(CoreFacade core) {
-    this(core, () -> true);
+    this(core, new OpenDocuments(), () -> true, () -> true);
   }
 
-  JvmPlsTextDocumentService(CoreFacade core, BooleanSupplier acceptingRequests) {
+  JvmPlsTextDocumentService(CoreFacade core,
+                            OpenDocuments openDocuments,
+                            BooleanSupplier acceptingRequests,
+                            BooleanSupplier coreReady) {
     this.core = core;
+    this.openDocuments = openDocuments;
     this.acceptingRequests = acceptingRequests;
+    this.coreReady = coreReady;
   }
 
   // -------------------------------------------------------------------------
@@ -46,7 +53,12 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
       LOG.warning("Ignoring textDocument/didOpen after shutdown");
       return;
     }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Ignoring textDocument/didOpen before initialization");
+      return;
+    }
     TextDocumentItem doc = params.getTextDocument();
+    openDocuments.open(doc.getUri(), doc.getLanguageId(), doc.getVersion(), doc.getText());
     core.openFile(doc.getUri(), doc.getText());
   }
 
@@ -56,6 +68,10 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
       LOG.warning("Ignoring textDocument/didChange after shutdown");
       return;
     }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Ignoring textDocument/didChange before initialization");
+      return;
+    }
     String uri = params.getTextDocument().getUri();
     List<TextDocumentContentChangeEvent> changes = params.getContentChanges();
     if (changes == null || changes.isEmpty()) {
@@ -63,6 +79,7 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
     }
     // Full-sync: use the last (or only) content change
     String text = changes.get(changes.size() - 1).getText();
+    openDocuments.change(uri, params.getTextDocument().getVersion(), text);
     core.changeFile(uri, text);
   }
 
@@ -72,7 +89,12 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
       LOG.warning("Ignoring textDocument/didClose after shutdown");
       return;
     }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Ignoring textDocument/didClose before initialization");
+      return;
+    }
     String uri = params.getTextDocument().getUri();
+    openDocuments.close(uri);
     core.closeFile(uri);
   }
 
@@ -91,6 +113,10 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
     if (!acceptingRequests.getAsBoolean()) {
       LOG.warning("Rejecting textDocument/completion after shutdown");
       return rejectedAfterShutdown("textDocument/completion");
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/completion before initialization");
+      return rejectedUnavailable("textDocument/completion");
     }
     return CompletableFuture.supplyAsync(() -> {
       try {
@@ -114,6 +140,10 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
     if (!acceptingRequests.getAsBoolean()) {
       LOG.warning("Rejecting textDocument/definition after shutdown");
       return rejectedAfterShutdown("textDocument/definition");
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/definition before initialization");
+      return rejectedUnavailable("textDocument/definition");
     }
     return CompletableFuture.supplyAsync(() -> {
       try {
@@ -139,6 +169,14 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
         new ResponseError(
             ResponseErrorCode.InvalidRequest,
             method + " is not available after shutdown",
+            null)));
+  }
+
+  private static <T> CompletableFuture<T> rejectedUnavailable(String method) {
+    return CompletableFuture.failedFuture(new ResponseErrorException(
+        new ResponseError(
+            ResponseErrorCode.InvalidRequest,
+            method + " is not available before initialization completes",
             null)));
   }
 }

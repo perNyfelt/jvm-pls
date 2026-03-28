@@ -5,17 +5,24 @@ import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 public class JvmPlsWorkspaceService implements WorkspaceService {
 
     private final BooleanSupplier acceptingRequests;
+    private final Consumer<Object> configurationChanged;
+    private final Consumer<DidChangeWatchedFilesParams> watchedFilesChanged;
 
     public JvmPlsWorkspaceService() {
-        this(() -> true);
+        this(() -> true, ignored -> { }, ignored -> { });
     }
 
-    JvmPlsWorkspaceService(BooleanSupplier acceptingRequests) {
+    JvmPlsWorkspaceService(BooleanSupplier acceptingRequests,
+                           Consumer<Object> configurationChanged,
+                           Consumer<DidChangeWatchedFilesParams> watchedFilesChanged) {
         this.acceptingRequests = acceptingRequests;
+        this.configurationChanged = configurationChanged;
+        this.watchedFilesChanged = watchedFilesChanged;
     }
 
     @Override
@@ -23,7 +30,7 @@ public class JvmPlsWorkspaceService implements WorkspaceService {
         if (!acceptingRequests.getAsBoolean()) {
             return;
         }
-        // will be implemented in Phase 3 (build system integration)
+        configurationChanged.accept(params.getSettings());
     }
 
     @Override
@@ -31,6 +38,6 @@ public class JvmPlsWorkspaceService implements WorkspaceService {
         if (!acceptingRequests.getAsBoolean()) {
             return;
         }
-        // will be implemented in Phase 3 (build file watching)
+        watchedFilesChanged.accept(params);
     }
 }

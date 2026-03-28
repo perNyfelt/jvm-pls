@@ -2,6 +2,7 @@ package se.alipsa.jvmpls.server;
 
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.services.*;
+import se.alipsa.jvmpls.build.BuildToolRegistry;
 import se.alipsa.jvmpls.core.CoreFacade;
 import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.server.CoreServer;
@@ -23,10 +24,11 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
 
   private static final Logger LOG = Logger.getLogger(JvmPlsLanguageServer.class.getName());
 
-  private final AutoCloseable coreLifecycle;
+  private final ReloadableCoreFacade coreFacade;
   private final JvmPlsTextDocumentService textDocumentService;
   private final JvmPlsWorkspaceService workspaceService;
   private final ClientDiagnosticsPublisher diagnosticsPublisher;
+  private final WorkspaceManager workspaceManager;
   private final IntConsumer processExit;
   private volatile boolean shutdownRequested;
   private volatile int exitCode = 1;
@@ -45,21 +47,40 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
       throw new IllegalArgumentException(
           "Passing CoreServer is unsupported here because it already publishes diagnostics");
     }
-    this.coreLifecycle = Objects.requireNonNull(coreLifecycle, "coreLifecycle");
     this.diagnosticsPublisher = new ClientDiagnosticsPublisher();
+    this.coreFacade = new ReloadableCoreFacade();
     CoreFacade publishingCore = publishDiagnosticsFrom(safeCore, diagnosticsPublisher);
-    this.textDocumentService = new JvmPlsTextDocumentService(publishingCore, this::acceptingRequests);
-    this.workspaceService = new JvmPlsWorkspaceService(this::acceptingRequests);
+    try {
+      this.coreFacade.install(publishingCore, Objects.requireNonNull(coreLifecycle, "coreLifecycle"),
+          "Injected core is ready");
+    } catch (Exception e) {
+      throw new IllegalStateException("Failed to install injected core", e);
+    }
+    OpenDocuments openDocuments = new OpenDocuments();
+    this.workspaceManager = null;
+    this.textDocumentService = new JvmPlsTextDocumentService(
+        coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
+    this.workspaceService = new JvmPlsWorkspaceService(this::acceptingRequests, ignored -> { }, ignored -> { });
     this.processExit = Objects.requireNonNull(processExit, "processExit");
   }
 
   private JvmPlsLanguageServer(ClientDiagnosticsPublisher diagnosticsPublisher,
                                IntConsumer processExit) {
-    CoreServer coreServer = CoreServer.createDefault(diagnosticsPublisher);
-    this.coreLifecycle = coreServer;
-    this.textDocumentService = new JvmPlsTextDocumentService(coreServer, this::acceptingRequests);
-    this.workspaceService = new JvmPlsWorkspaceService(this::acceptingRequests);
     this.diagnosticsPublisher = diagnosticsPublisher;
+    this.coreFacade = new ReloadableCoreFacade();
+    OpenDocuments openDocuments = new OpenDocuments();
+    this.workspaceManager = new WorkspaceManager(
+        BuildToolRegistry.createDefault(),
+        new WorkspaceCoreFactory(),
+        coreFacade,
+        openDocuments,
+        diagnosticsPublisher);
+    this.textDocumentService = new JvmPlsTextDocumentService(
+        coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
+    this.workspaceService = new JvmPlsWorkspaceService(
+        this::acceptingRequests,
+        settings -> workspaceManager.didChangeConfiguration(settings),
+        params -> workspaceManager.didChangeWatchedFiles(params));
     this.processExit = Objects.requireNonNull(processExit, "processExit");
   }
 
@@ -70,6 +91,10 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
 
   @Override
   public CompletableFuture<InitializeResult> initialize(InitializeParams params) {
+    if (workspaceManager != null) {
+      workspaceManager.initialize(params);
+    }
+
     ServerCapabilities capabilities = new ServerCapabilities();
     TextDocumentSyncOptions syncOptions = new TextDocumentSyncOptions();
     syncOptions.setOpenClose(true);
@@ -90,14 +115,14 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
 
   @Override
   public void initialized(InitializedParams params) {
-    // Workspace scanning will be added in Phase 3.
+    // No-op. Workspace bootstrap happens during initialize().
   }
 
   @Override
   public CompletableFuture<Object> shutdown() {
     shutdownRequested = true;
     try {
-      coreLifecycle.close();
+      coreFacade.close();
     } catch (Exception e) {
       LOG.log(Level.SEVERE, "Failed to close core server during shutdown", e);
     }
