@@ -14,8 +14,10 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -40,6 +42,7 @@ final class WorkspaceManager {
   private final ReloadableCoreFacade reloadableCore;
   private final OpenDocuments openDocuments;
   private final DiagnosticsPublisher diagnosticsPublisher;
+  private final Consumer<String> warningReporter;
 
   private volatile WorkspaceSettings workspaceSettings = WorkspaceSettings.empty();
   private volatile Path workspaceRoot;
@@ -49,12 +52,14 @@ final class WorkspaceManager {
                    WorkspaceCoreFactory coreFactory,
                    ReloadableCoreFacade reloadableCore,
                    OpenDocuments openDocuments,
-                   DiagnosticsPublisher diagnosticsPublisher) {
+                   DiagnosticsPublisher diagnosticsPublisher,
+                   Consumer<String> warningReporter) {
     this.buildToolRegistry = buildToolRegistry;
     this.coreFactory = coreFactory;
     this.reloadableCore = reloadableCore;
     this.openDocuments = openDocuments;
     this.diagnosticsPublisher = diagnosticsPublisher;
+    this.warningReporter = Objects.requireNonNull(warningReporter, "warningReporter");
   }
 
   void initialize(InitializeParams params) {
@@ -97,27 +102,22 @@ final class WorkspaceManager {
   }
 
   private synchronized void refreshWorkspace(String reason) {
+    BuildModel buildModel;
     try {
-      BuildModel buildModel = resolveBuildModel();
-      WorkspaceCoreFactory.CoreInstance nextCore = coreFactory.create(
-          buildModel.classpathEntries(),
-          buildModel.targetJdkHome(),
-          diagnosticsPublisher);
-      openDocuments.replayInto(nextCore.core());
-      reloadableCore.install(nextCore.core(), nextCore.lifecycle(),
-          "Workspace core ready for " + buildModel.toolId());
-      currentBuildModel = buildModel;
-      LOG.info(() -> "Loaded workspace using " + buildModel.toolId()
-          + " at " + buildModel.projectRoot()
-          + " with " + buildModel.classpathEntries().size() + " classpath entries"
-          + " after " + reason);
-    } catch (Exception e) {
-      LOG.log(Level.WARNING, "Workspace resolution failed; falling back to JDK-only symbols", e);
-      fallbackToJdkOnly(reason);
+      buildModel = resolveBuildModel();
+    } catch (BuildResolutionException e) {
+      String message = "Workspace resolution failed after " + reason
+          + "; falling back to JDK-only symbols: " + rootCauseMessage(e);
+      LOG.log(Level.WARNING, message, e);
+      warningReporter.accept(message);
+      fallbackToJdkOnly(reason, e);
+      return;
     }
+
+    installBuildModel(buildModel, reason);
   }
 
-  private void fallbackToJdkOnly(String reason) {
+  private void fallbackToJdkOnly(String reason, Exception cause) {
     try {
       BuildModel fallback = new BuildModel(
           "fallback",
@@ -129,17 +129,45 @@ final class WorkspaceManager {
           List.of(),
           workspaceSettings.targetJdkHome(),
           List.of());
-      WorkspaceCoreFactory.CoreInstance nextCore = coreFactory.create(
-          fallback.classpathEntries(),
-          fallback.targetJdkHome(),
-          diagnosticsPublisher);
-      openDocuments.replayInto(nextCore.core());
-      reloadableCore.install(nextCore.core(), nextCore.lifecycle(),
-          "Workspace core ready in fallback mode");
-      currentBuildModel = fallback;
+      installBuildModel(fallback, reason);
       LOG.info(() -> "Loaded fallback workspace core after " + reason);
     } catch (Exception fallbackFailure) {
+      String unavailableReason = "Workspace initialization failed after " + reason
+          + ": " + rootCauseMessage(fallbackFailure)
+          + ". Original resolution error: " + rootCauseMessage(cause);
+      reloadableCore.setUnavailableReason(unavailableReason);
       LOG.log(Level.SEVERE, "Failed to create fallback workspace core", fallbackFailure);
+      warningReporter.accept(unavailableReason);
+      throw asIllegalState("Failed to create fallback workspace core", fallbackFailure);
+    }
+  }
+
+  private void installBuildModel(BuildModel buildModel, String reason) {
+    WorkspaceCoreFactory.CoreInstance nextCore = coreFactory.create(
+        buildModel.classpathEntries(),
+        buildModel.targetJdkHome(),
+        diagnosticsPublisher);
+    boolean installed = false;
+    try {
+      openDocuments.replayInto(nextCore.core());
+      reloadableCore.install(nextCore.core(), nextCore.lifecycle(),
+          "Workspace core ready for " + buildModel.toolId());
+      installed = true;
+      currentBuildModel = buildModel;
+      LOG.info(() -> "Loaded workspace using " + buildModel.toolId()
+          + " at " + buildModel.projectRoot()
+          + " with " + buildModel.classpathEntries().size() + " classpath entries"
+          + " after " + reason);
+    } catch (RuntimeException e) {
+      LOG.log(Level.SEVERE, "Workspace core installation failed after " + reason, e);
+      throw e;
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Workspace core installation failed after " + reason, e);
+      throw new IllegalStateException("Failed to install workspace core", e);
+    } finally {
+      if (!installed) {
+        closeQuietly(nextCore.lifecycle(), "Discarding uninstalled workspace core");
+      }
     }
   }
 
@@ -208,15 +236,33 @@ final class WorkspaceManager {
         root.resolve(".mvn/toolchains.xml"));
   }
 
-  private static Path resolveWorkspaceRoot(InitializeParams params) {
+  private Path resolveWorkspaceRoot(InitializeParams params) {
     if (params.getRootUri() != null && !params.getRootUri().isBlank()) {
-      return toPath(params.getRootUri());
+      return toWorkspacePath(params.getRootUri());
     }
     if (params.getWorkspaceFolders() != null && !params.getWorkspaceFolders().isEmpty()) {
       WorkspaceFolder workspaceFolder = params.getWorkspaceFolders().getFirst();
-      return workspaceFolder == null ? null : toPath(workspaceFolder.getUri());
+      return workspaceFolder == null ? null : toWorkspacePath(workspaceFolder.getUri());
     }
     return null;
+  }
+
+  private Path toWorkspacePath(String uri) {
+    if (uri == null || uri.isBlank()) {
+      return null;
+    }
+    try {
+      URI parsed = URI.create(uri);
+      if (!"file".equalsIgnoreCase(parsed.getScheme())) {
+        throw new IllegalArgumentException("Only file:// workspace URIs are supported: " + uri);
+      }
+      return Path.of(parsed).toAbsolutePath().normalize();
+    } catch (RuntimeException e) {
+      String message = "Ignoring unsupported workspace URI " + uri + ": " + rootCauseMessage(e);
+      LOG.log(Level.WARNING, message, e);
+      warningReporter.accept(message);
+      return null;
+    }
   }
 
   private static Path toPath(String uri) {
@@ -229,5 +275,31 @@ final class WorkspaceManager {
       LOG.log(Level.WARNING, "Failed to convert workspace URI to path: " + uri, e);
       return null;
     }
+  }
+
+  private static void closeQuietly(AutoCloseable lifecycle, String message) {
+    if (lifecycle == null) {
+      return;
+    }
+    try {
+      lifecycle.close();
+    } catch (Exception e) {
+      LOG.log(Level.WARNING, message, e);
+    }
+  }
+
+  private static String rootCauseMessage(Throwable throwable) {
+    Throwable current = throwable;
+    while (current.getCause() != null) {
+      current = current.getCause();
+    }
+    String message = current.getMessage();
+    return message == null || message.isBlank() ? current.getClass().getSimpleName() : message;
+  }
+
+  private static IllegalStateException asIllegalState(String message, Exception cause) {
+    return cause instanceof IllegalStateException existing
+        ? existing
+        : new IllegalStateException(message, cause);
   }
 }

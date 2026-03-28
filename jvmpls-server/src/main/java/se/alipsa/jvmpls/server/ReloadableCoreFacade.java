@@ -10,8 +10,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
+
+  private static final Logger LOG = Logger.getLogger(ReloadableCoreFacade.class.getName());
 
   private final AtomicReference<CoreFacade> delegate = new AtomicReference<>();
   private final AtomicReference<AutoCloseable> lifecycle = new AtomicReference<>();
@@ -34,7 +38,11 @@ final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
     unavailableReason.set(readyMessage == null || readyMessage.isBlank()
         ? "Workspace core is ready" : readyMessage);
     if (previousLifecycle != null && previousLifecycle != newLifecycle) {
-      previousLifecycle.close();
+      try {
+        previousLifecycle.close();
+      } catch (Exception e) {
+        LOG.log(Level.WARNING, "Failed to close previous workspace core after installing new core", e);
+      }
     }
   }
 
@@ -46,6 +54,11 @@ final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
     if (previousLifecycle != null) {
       previousLifecycle.close();
     }
+  }
+
+  void setUnavailableReason(String reason) {
+    unavailableReason.set(reason == null || reason.isBlank()
+        ? "Server not initialized" : reason);
   }
 
   @Override

@@ -2,6 +2,7 @@ package se.alipsa.jvmpls.build;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 
 public record BuildModule(String name,
                           Path projectRoot,
@@ -12,6 +13,8 @@ public record BuildModule(String name,
                           List<Path> buildFiles) {
 
   public BuildModule {
+    name = Objects.requireNonNull(name, "name");
+    projectRoot = Objects.requireNonNull(projectRoot, "projectRoot");
     sourceRoots = sourceRoots == null ? List.of() : List.copyOf(sourceRoots);
     testSourceRoots = testSourceRoots == null ? List.of() : List.copyOf(testSourceRoots);
     outputDirectories = outputDirectories == null ? List.of() : List.copyOf(outputDirectories);

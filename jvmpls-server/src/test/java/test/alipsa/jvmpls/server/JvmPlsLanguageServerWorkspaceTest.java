@@ -22,6 +22,7 @@ import se.alipsa.jvmpls.server.JvmPlsLanguageServer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
@@ -64,7 +65,7 @@ class JvmPlsLanguageServerWorkspaceTest {
     Files.writeString(javaFile, code, StandardCharsets.UTF_8);
 
     JvmPlsLanguageServer server = new JvmPlsLanguageServer();
-    server.connect(new NoOpLanguageClient());
+    server.connect(new CapturingLanguageClient());
     initialize(server, root, null);
 
     server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
@@ -95,7 +96,7 @@ class JvmPlsLanguageServerWorkspaceTest {
     Files.writeString(javaFile, code, StandardCharsets.UTF_8);
 
     JvmPlsLanguageServer server = new JvmPlsLanguageServer();
-    server.connect(new NoOpLanguageClient());
+    server.connect(new CapturingLanguageClient());
     initialize(server, null, Map.of("classpath", List.of(classGraphJar.toString())));
 
     server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
@@ -125,7 +126,7 @@ class JvmPlsLanguageServerWorkspaceTest {
     Files.writeString(javaFile, code, StandardCharsets.UTF_8);
 
     JvmPlsLanguageServer server = new JvmPlsLanguageServer();
-    server.connect(new NoOpLanguageClient());
+    server.connect(new CapturingLanguageClient());
     initialize(server, root, null);
     String uri = javaFile.toUri().toString();
 
@@ -152,6 +153,56 @@ class JvmPlsLanguageServerWorkspaceTest {
 
     assertTrue(result.isLeft());
     assertTrue(result.getLeft().isEmpty(), "definition should disappear after dependency refresh");
+  }
+
+  @Test
+  void initialize_warnsAndFallsBackWhenBuildResolutionFails() throws Exception {
+    Path root = Files.createTempDirectory("jvmpls-broken-workspace");
+    Path javaFile = root.resolve("src/main/java/demo/Main.java");
+    Files.createDirectories(javaFile.getParent());
+    Files.writeString(root.resolve("pom.xml"), "<project><broken>", StandardCharsets.UTF_8);
+    String code = """
+        package demo;
+        public class Main {
+          String value;
+        }
+        """;
+    Files.writeString(javaFile, code, StandardCharsets.UTF_8);
+
+    JvmPlsLanguageServer server = new JvmPlsLanguageServer();
+    CapturingLanguageClient client = new CapturingLanguageClient();
+    server.connect(client);
+    initialize(server, root, null);
+
+    assertTrue(client.messages.stream().anyMatch(message ->
+            message.getMessage().contains("falling back to JDK-only symbols")),
+        "client should be warned when workspace resolution falls back");
+
+    server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+        new TextDocumentItem(javaFile.toUri().toString(), "java", 1, code)));
+
+    Either<List<? extends org.eclipse.lsp4j.Location>, List<? extends org.eclipse.lsp4j.LocationLink>> result =
+        server.getTextDocumentService().definition(
+            new DefinitionParams(new TextDocumentIdentifier(javaFile.toUri().toString()),
+                wordPosition(code, "String")))
+            .get(5, TimeUnit.SECONDS);
+
+    assertTrue(result.isLeft(), "fallback initialization should keep requests functional");
+  }
+
+  @Test
+  void initialize_warnsWhenWorkspaceUriIsUnsupported() throws Exception {
+    JvmPlsLanguageServer server = new JvmPlsLanguageServer();
+    CapturingLanguageClient client = new CapturingLanguageClient();
+    server.connect(client);
+
+    InitializeParams params = new InitializeParams();
+    params.setRootUri("vscode-remote://ssh-remote+demo/workspace");
+    server.initialize(params).get(5, TimeUnit.SECONDS);
+
+    assertTrue(client.messages.stream().anyMatch(message ->
+            message.getMessage().contains("Ignoring unsupported workspace URI")),
+        "client should be warned about unsupported non-file workspace URIs");
   }
 
   private static void assertDefinitionPresent(JvmPlsLanguageServer server, String uri, String code) throws Exception {
@@ -210,7 +261,9 @@ class JvmPlsLanguageServerWorkspaceTest {
     return root;
   }
 
-  private static final class NoOpLanguageClient implements LanguageClient {
+  private static final class CapturingLanguageClient implements LanguageClient {
+
+    private final List<org.eclipse.lsp4j.MessageParams> messages = new ArrayList<>();
 
     @Override
     public void telemetryEvent(Object object) {
@@ -222,6 +275,7 @@ class JvmPlsLanguageServerWorkspaceTest {
 
     @Override
     public void showMessage(org.eclipse.lsp4j.MessageParams messageParams) {
+      messages.add(messageParams);
     }
 
     @Override

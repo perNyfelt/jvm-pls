@@ -5,8 +5,12 @@ import se.alipsa.jvmpls.core.CoreFacade;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 final class OpenDocuments {
+
+  private static final Logger LOG = Logger.getLogger(OpenDocuments.class.getName());
 
   private final ConcurrentHashMap<String, DocumentState> documentsByUri = new ConcurrentHashMap<>();
 
@@ -29,7 +33,11 @@ final class OpenDocuments {
 
   void replayInto(CoreFacade core) {
     for (DocumentState document : snapshot()) {
-      core.openFile(document.uri(), document.text());
+      try {
+        core.openFile(document.uri(), document.text());
+      } catch (RuntimeException e) {
+        LOG.log(Level.WARNING, "Failed to replay open document " + document.uri(), e);
+      }
     }
   }
 

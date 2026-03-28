@@ -81,7 +81,10 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
           environment.getJava() == null || environment.getJava().getJavaHome() == null
               ? null : environment.getJava().getJavaHome().toPath(),
           watchedFiles.stream().filter(Files::exists).toList());
-    } catch (Exception e) {
+    } catch (RuntimeException e) {
+      if (wasInterrupted(e)) {
+        Thread.currentThread().interrupt();
+      }
       throw new BuildResolutionException("Failed to resolve Gradle project at " + root, e);
     }
   }
@@ -102,8 +105,7 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
 
     for (EclipseSourceDirectory sourceDirectory : project.getSourceDirectories()) {
       Path dir = sourceDirectory.getDirectory().toPath().toAbsolutePath().normalize();
-      String name = dir.getFileName() == null ? "" : dir.getFileName().toString().toLowerCase();
-      if (name.contains("test")) {
+      if (isTestSourceDirectory(projectDir, dir)) {
         testSourceRoots.add(dir);
         moduleTestSourceRoots.add(dir);
       } else {
@@ -185,5 +187,28 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
       return sdkman;
     }
     return null;
+  }
+
+  private static boolean isTestSourceDirectory(Path projectDir, Path directory) {
+    Path pathToCheck = directory.startsWith(projectDir)
+        ? projectDir.relativize(directory)
+        : directory;
+    for (Path segment : pathToCheck) {
+      if ("test".equalsIgnoreCase(segment.toString())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean wasInterrupted(Throwable failure) {
+    Throwable current = failure;
+    while (current != null) {
+      if (current instanceof InterruptedException) {
+        return true;
+      }
+      current = current.getCause();
+    }
+    return false;
   }
 }

@@ -44,4 +44,30 @@ class GradleBuildPluginTest {
     assertTrue(model.watchedFiles().contains(root.resolve("build.gradle")));
     assertTrue(model.watchedFiles().contains(root.resolve("settings.gradle")));
   }
+
+  @Test
+  void testSourceDetection_usesPathSegmentsInsteadOfSubstringMatches() throws Exception {
+    Path root = Files.createTempDirectory("jvmpls-gradle-test-sources");
+    Files.createDirectories(root.resolve("src/testutils/java/demo"));
+    Files.createDirectories(root.resolve("src/test/java/demo"));
+    Files.writeString(root.resolve("settings.gradle"), "rootProject.name = 'demo'\n", StandardCharsets.UTF_8);
+    Files.writeString(root.resolve("build.gradle"), """
+        plugins {
+          id 'java'
+        }
+
+        sourceSets {
+          main {
+            java.srcDirs = ['src/testutils/java']
+          }
+        }
+        """, StandardCharsets.UTF_8);
+
+    BuildModel model = new GradleBuildPlugin().resolve(root);
+
+    assertTrue(model.sourceRoots().stream()
+        .anyMatch(path -> path.endsWith("src/testutils/java")));
+    assertTrue(model.testSourceRoots().stream()
+        .anyMatch(path -> path.endsWith("src/test/java")));
+  }
 }

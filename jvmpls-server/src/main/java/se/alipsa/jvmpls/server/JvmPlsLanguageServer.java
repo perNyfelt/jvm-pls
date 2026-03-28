@@ -74,7 +74,8 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
         new WorkspaceCoreFactory(),
         coreFacade,
         openDocuments,
-        diagnosticsPublisher);
+        diagnosticsPublisher,
+        diagnosticsPublisher::showWarning);
     this.textDocumentService = new JvmPlsTextDocumentService(
         coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
     this.workspaceService = new JvmPlsWorkspaceService(
@@ -223,6 +224,22 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
             new PublishDiagnosticsParams(uri, LspTypeConverter.toLspDiagnostics(safeDiagnostics)));
       } catch (RuntimeException e) {
         LOG.log(Level.SEVERE, "Failed to publish diagnostics for " + uri, e);
+      }
+    }
+
+    void showWarning(String message) {
+      LanguageClient currentClient = client;
+      if (message == null || message.isBlank()) {
+        return;
+      }
+      if (currentClient == null) {
+        LOG.warning("Dropping warning message because no language client is connected: " + message);
+        return;
+      }
+      try {
+        currentClient.showMessage(new MessageParams(MessageType.Warning, message));
+      } catch (RuntimeException e) {
+        LOG.log(Level.SEVERE, "Failed to send warning message to the language client", e);
       }
     }
   }

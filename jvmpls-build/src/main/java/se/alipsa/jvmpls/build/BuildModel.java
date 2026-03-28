@@ -3,6 +3,7 @@ package se.alipsa.jvmpls.build;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 
 public record BuildModel(String toolId,
                          Path projectRoot,
@@ -15,6 +16,7 @@ public record BuildModel(String toolId,
                          List<Path> watchedFiles) {
 
   public BuildModel {
+    toolId = Objects.requireNonNull(toolId, "toolId");
     sourceRoots = sourceRoots == null ? List.of() : List.copyOf(sourceRoots);
     testSourceRoots = testSourceRoots == null ? List.of() : List.copyOf(testSourceRoots);
     classpathEntries = classpathEntries == null ? List.of() : List.copyOf(classpathEntries);
