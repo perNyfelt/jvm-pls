@@ -175,8 +175,10 @@ class JvmPlsLanguageServerTest {
     serverProxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
         new TextDocumentItem(barUri, "java", 1, barCode)));
 
-    // Let indexing and async communication settle
-    Thread.sleep(500);
+    assertNotNull(testClient.awaitDiagnostics(fooUri, TIMEOUT_SECONDS),
+        "should have received publishDiagnostics for " + fooUri);
+    assertNotNull(testClient.awaitDiagnostics(barUri, TIMEOUT_SECONDS),
+        "should have received publishDiagnostics for " + barUri);
 
     // Request completion at the end of "Fo" in barCode
     // Line 4: "    Fo" -> line index 4, character 6
