@@ -4,6 +4,14 @@
 
 Use this module when you want JVM language indexing, diagnostics, completions, and go-to-definition inside your own application without speaking LSP or launching the standalone server process.
 
+## Module Purpose
+
+This module owns the transport-agnostic engine and API surface:
+
+- `CoreFacade` defines the operations for open/change/analyze/completion/definition.
+- `CoreServer` builds a ready-to-use in-process server with `ServiceLoader` plugin discovery.
+- `SymbolIndex` and provider hooks back source symbols with lazy external symbol lookup.
+
 ## Dependencies
 
 Add `jvmpls-core` plus the language plugins you want on the runtime classpath.
