@@ -24,17 +24,17 @@ Most embeddings do not use this module directly. Add it to the runtime classpath
 </dependency>
 ```
 
-With that dependency present, the default embedded server will automatically register the classpath provider:
+With that dependency present, the default embedded server will automatically register the provider module, but only the current JDK is scanned by default:
 
 ```java
 try (CoreServer server = CoreServer.createDefault(diagnosticsPublisher)) {
-  // JDK and runtime classpath symbols are now available
+  // JDK symbols are available
 }
 ```
 
 ## Explicit Classpath And JDK Configuration
 
-If your host application needs a custom classpath or a specific JDK home, use the explicit overload:
+If your host application needs dependency JARs, compiled output directories, or a specific JDK home, use the explicit overload:
 
 ```java
 List<String> classpath = List.of(
@@ -47,6 +47,8 @@ try (CoreServer server = CoreServer.createDefault(diagnosticsPublisher, classpat
   // external symbols come from the supplied classpath and JDK
 }
 ```
+
+This is the recommended way to model a real workspace. `jvmpls-classpath` does not assume the host process classpath is the same thing as the project classpath.
 
 ## Main Types
 

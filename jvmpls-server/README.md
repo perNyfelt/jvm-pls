@@ -19,14 +19,14 @@ mvn -pl jvmpls-server -am package
 Run the server over stdio:
 
 ```bash
-java -jar jvmpls-server/target/jvm-pls-1.0.0-SNAPSHOT-standalone.jar --stdio
+java -jar jvmpls-server/target/jvmpls-server-1.0.0-SNAPSHOT-standalone.jar --stdio
 ```
 
 Other supported flags:
 
 ```bash
-java -jar jvmpls-server/target/jvm-pls-1.0.0-SNAPSHOT-standalone.jar --version
-java -jar jvmpls-server/target/jvm-pls-1.0.0-SNAPSHOT-standalone.jar --help
+java -jar jvmpls-server/target/jvmpls-server-1.0.0-SNAPSHOT-standalone.jar --version
+java -jar jvmpls-server/target/jvmpls-server-1.0.0-SNAPSHOT-standalone.jar --help
 ```
 
 ## What It Provides
@@ -36,6 +36,10 @@ java -jar jvmpls-server/target/jvm-pls-1.0.0-SNAPSHOT-standalone.jar --help
 - go-to-definition
 - diagnostics publication
 - proper shutdown and exit lifecycle handling
+
+## Current Classpath Scope
+
+The standalone server does not infer the workspace dependency graph yet. Today it can expose JDK symbols, but workspace dependency JARs and build output need future workspace/build-tool wiring.
 
 ## Embedding Note
 

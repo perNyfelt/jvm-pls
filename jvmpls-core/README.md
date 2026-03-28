@@ -68,6 +68,9 @@ try (CoreServer server = CoreServer.createDefault((uri, diagnostics) -> {
 - plugin discovery via `ServiceLoader`
 - symbol index and document store setup
 - a diagnostics callback you provide
+- JDK symbol resolution by default
+
+The zero-argument classpath default is intentional. It avoids treating the host process classpath as the workspace classpath.
 
 ## Minimal Example
 
@@ -96,6 +99,20 @@ public class EmbeddedExample {
       System.out.println("Definition: " + definition);
     }
   }
+}
+```
+
+If you want external dependency JARs or compiled class directories, use the explicit overload:
+
+```java
+List<String> classpath = List.of(
+    "/path/to/dependency.jar",
+    "/path/to/build/classes/java/main"
+);
+Path targetJdk = Path.of(System.getProperty("java.home"));
+
+try (CoreServer server = CoreServer.createDefault(diagnosticsPublisher, classpath, targetJdk)) {
+  // workspace-specific external symbols are now available
 }
 ```
 

@@ -1,5 +1,6 @@
 package test.alipsa.jvmpls.it;
 
+import io.github.classgraph.ClassGraph;
 import org.junit.jupiter.api.Test;
 import se.alipsa.jvmpls.core.model.CompletionItem;
 import se.alipsa.jvmpls.core.model.Location;
@@ -12,6 +13,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JavaGroovyExternalTypesIT {
@@ -48,7 +50,7 @@ class JavaGroovyExternalTypesIT {
     Files.writeString(groovyFile, groovyCode, StandardCharsets.UTF_8);
     String groovyUri = groovyFile.toUri().toString();
 
-    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {}, List.of(), currentJdkHome())) {
       server.openFile(javaUri, javaCode);
       server.openFile(groovyUri, groovyCode);
 
@@ -67,6 +69,37 @@ class JavaGroovyExternalTypesIT {
           "Java completions should contain List from the JDK");
       assertTrue(containsLabel(groovyCompletions, "Map"),
           "Groovy completions should contain Map from the JDK");
+    }
+  }
+
+  @Test
+  void createDefault_does_not_scan_the_process_classpath() throws Exception {
+    Path classGraphJar = Path.of(ClassGraph.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+    String code = """
+      package demo;
+      import io.github.classgraph.ClassGraph;
+      public class Main {
+        ClassGraph graph;
+      }
+      """;
+    Path dir = Files.createTempDirectory("jvmpls-it-no-runtime-classpath");
+    Path javaFile = dir.resolve("Main.java");
+    Files.writeString(javaFile, code, StandardCharsets.UTF_8);
+    String javaUri = javaFile.toUri().toString();
+
+    try (CoreServer defaultServer = CoreServer.createDefault((u, d) -> {})) {
+      defaultServer.openFile(javaUri, code);
+      assertFalse(defaultServer.definition(javaUri, firstWholeWord(code, "ClassGraph")).isPresent(),
+          "default server should not resolve process classpath dependencies");
+    }
+
+    try (CoreServer explicitServer = CoreServer.createDefault(
+        (u, d) -> {},
+        List.of(classGraphJar.toString()),
+        currentJdkHome())) {
+      explicitServer.openFile(javaUri, code);
+      assertTrue(explicitServer.definition(javaUri, firstWholeWord(code, "ClassGraph")).isPresent(),
+          "explicit classpath should resolve requested dependencies");
     }
   }
 
@@ -100,5 +133,9 @@ class JavaGroovyExternalTypesIT {
       }
     }
     return new Position(line, col);
+  }
+
+  private static Path currentJdkHome() {
+    return Path.of(System.getProperty("java.home"));
   }
 }

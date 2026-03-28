@@ -35,7 +35,7 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
 
   /** Build a CoreServer with sensible defaults and plugins discovered via ServiceLoader. */
   public static CoreServer createDefault(DiagnosticsPublisher publisher) {
-    return createDefault(publisher, runtimeClasspath(), currentJdkHome());
+    return createDefault(publisher, List.of(), currentJdkHome());
   }
 
   /** Build a CoreServer with explicit classpath/JDK configuration for external symbol resolution. */
@@ -63,7 +63,7 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
                                   DependencyGraph graph,
                                   Executor executor,
                                   DiagnosticsPublisher publisher) {
-    return create(registry, index, docs, graph, executor, runtimeClasspath(), currentJdkHome(), publisher);
+    return create(registry, index, docs, graph, executor, List.of(), currentJdkHome(), publisher);
   }
 
   public static CoreServer create(PluginRegistry registry,
@@ -138,17 +138,6 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
         index.registerProvider(provider);
       }
     }
-  }
-
-  private static List<String> runtimeClasspath() {
-    String classpath = System.getProperty("java.class.path", "");
-    if (classpath.isBlank()) {
-      return List.of();
-    }
-    return java.util.Arrays.stream(classpath.split(java.io.File.pathSeparator))
-        .filter(entry -> entry != null && !entry.isBlank())
-        .distinct()
-        .toList();
   }
 
   private static Path currentJdkHome() {
