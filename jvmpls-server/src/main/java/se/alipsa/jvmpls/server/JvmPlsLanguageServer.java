@@ -34,7 +34,8 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
     this(new ClientDiagnosticsPublisher(), System::exit);
   }
 
-  JvmPlsLanguageServer(CoreFacade core, AutoCloseable coreLifecycle, IntConsumer processExit) {
+  /** Visible for tests and alternate embeddings that need explicit lifecycle hooks. */
+  public JvmPlsLanguageServer(CoreFacade core, AutoCloseable coreLifecycle, IntConsumer processExit) {
     this.coreLifecycle = Objects.requireNonNull(coreLifecycle, "coreLifecycle");
     this.diagnosticsPublisher = new ClientDiagnosticsPublisher();
     this.textDocumentService = new JvmPlsTextDocumentService(Objects.requireNonNull(core, "core"));
@@ -79,7 +80,7 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
 
   @Override
   public void initialized(InitializedParams params) {
-    // no-op for now
+    // Workspace scanning will be added in Phase 3.
   }
 
   @Override

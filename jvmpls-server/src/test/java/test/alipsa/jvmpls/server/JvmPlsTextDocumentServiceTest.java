@@ -1,4 +1,4 @@
-package se.alipsa.jvmpls.server;
+package test.alipsa.jvmpls.server;
 
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
@@ -15,6 +15,7 @@ import se.alipsa.jvmpls.core.CoreFacade;
 import se.alipsa.jvmpls.core.model.CompletionItem;
 import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.model.Range;
+import se.alipsa.jvmpls.server.JvmPlsTextDocumentService;
 
 import java.util.Collections;
 import java.util.List;

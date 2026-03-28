@@ -1,4 +1,4 @@
-package se.alipsa.jvmpls.server;
+package test.alipsa.jvmpls.server;
 
 import org.junit.jupiter.api.Test;
 import se.alipsa.jvmpls.core.CoreFacade;
@@ -6,6 +6,7 @@ import se.alipsa.jvmpls.core.model.CompletionItem;
 import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.model.Location;
 import se.alipsa.jvmpls.core.model.Position;
+import se.alipsa.jvmpls.server.JvmPlsLanguageServer;
 
 import java.util.List;
 import java.util.Optional;
