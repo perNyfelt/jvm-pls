@@ -9,10 +9,22 @@ public final class SymbolIndex implements CoreQuery {
 
   private final Map<String, SymbolInfo> byFqn = new ConcurrentHashMap<>();
   private final Map<String, Set<String>> fileToDecls = new ConcurrentHashMap<>();
+  private final List<SymbolProvider> providers = Collections.synchronizedList(new ArrayList<>());
+  private final Map<String, Optional<SymbolInfo>> providerByFqnCache = new ConcurrentHashMap<>();
+  private final Map<String, List<SymbolInfo>> providerBySimpleNameCache = new ConcurrentHashMap<>();
+  private final Map<String, List<SymbolInfo>> providerByPackageCache = new ConcurrentHashMap<>();
 
   public void put(String fileUri, SymbolInfo sym) {
     byFqn.put(sym.getFqName(), sym);
     fileToDecls.computeIfAbsent(fileUri, k -> ConcurrentHashMap.newKeySet()).add(sym.getFqName());
+  }
+
+  public void registerProvider(SymbolProvider provider) {
+    Objects.requireNonNull(provider, "provider");
+    providers.add(provider);
+    providerByFqnCache.clear();
+    providerBySimpleNameCache.clear();
+    providerByPackageCache.clear();
   }
 
   public void removeFile(String fileUri) {
@@ -20,20 +32,37 @@ public final class SymbolIndex implements CoreQuery {
     if (decls != null) decls.forEach(byFqn::remove);
   }
 
-  @Override public Optional<SymbolInfo> findByFqn(String fqn) { return Optional.ofNullable(byFqn.get(fqn)); }
+  @Override
+  public Optional<SymbolInfo> findByFqn(String fqn) {
+    SymbolInfo local = byFqn.get(fqn);
+    if (local != null) {
+      return Optional.of(local);
+    }
+    return providerByFqnCache.computeIfAbsent(fqn, this::resolveExternalByFqn);
+  }
 
   @Override public List<SymbolInfo> allInPackage(String pkg) {
     String prefix = pkg.endsWith(".") ? pkg : (pkg + ".");
-    ArrayList<SymbolInfo> out = new ArrayList<>();
-    byFqn.forEach((k,v) -> { if (k.startsWith(prefix)) out.add(v); });
-    return out;
+    Map<String, SymbolInfo> out = new LinkedHashMap<>();
+    for (SymbolInfo external : providerByPackageCache.computeIfAbsent(pkg, this::resolveExternalByPackage)) {
+      out.put(external.getFqName(), external);
+    }
+    byFqn.forEach((k, v) -> {
+      if (k.startsWith(prefix)) {
+        out.put(v.getFqName(), v);
+      }
+    });
+    return List.copyOf(out.values());
   }
 
   @Override
   public List<SymbolInfo> findBySimpleName(String simpleName) {
-    List<SymbolInfo> results = new ArrayList<>();
     if (simpleName == null || simpleName.isEmpty()) {
-      return results;
+      return List.of();
+    }
+    Map<String, SymbolInfo> results = new LinkedHashMap<>();
+    for (SymbolInfo external : providerBySimpleNameCache.computeIfAbsent(simpleName, this::resolveExternalBySimpleName)) {
+      results.put(external.getFqName(), external);
     }
     for (SymbolInfo sym : byFqn.values()) {
       String fqn = sym.getFqName();
@@ -47,9 +76,45 @@ public final class SymbolIndex implements CoreQuery {
         name = name.substring(0, openParen);
       }
       if (name.equals(simpleName)) {
-        results.add(sym);
+        results.put(sym.getFqName(), sym);
       }
     }
-    return results;
+    return List.copyOf(results.values());
+  }
+
+  private Optional<SymbolInfo> resolveExternalByFqn(String fqn) {
+    synchronized (providers) {
+      for (SymbolProvider provider : providers) {
+        Optional<SymbolInfo> hit = provider.findByFqn(fqn);
+        if (hit.isPresent()) {
+          return hit;
+        }
+      }
+    }
+    return Optional.empty();
+  }
+
+  private List<SymbolInfo> resolveExternalBySimpleName(String simpleName) {
+    Map<String, SymbolInfo> results = new LinkedHashMap<>();
+    synchronized (providers) {
+      for (SymbolProvider provider : providers) {
+        for (SymbolInfo symbol : provider.findBySimpleName(simpleName)) {
+          results.putIfAbsent(symbol.getFqName(), symbol);
+        }
+      }
+    }
+    return List.copyOf(results.values());
+  }
+
+  private List<SymbolInfo> resolveExternalByPackage(String pkg) {
+    Map<String, SymbolInfo> results = new LinkedHashMap<>();
+    synchronized (providers) {
+      for (SymbolProvider provider : providers) {
+        for (SymbolInfo symbol : provider.allInPackage(pkg)) {
+          results.putIfAbsent(symbol.getFqName(), symbol);
+        }
+      }
+    }
+    return List.copyOf(results.values());
   }
 }

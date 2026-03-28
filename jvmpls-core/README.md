@@ -4,6 +4,14 @@
 
 Use this module when you want JVM language indexing, diagnostics, completions, and go-to-definition inside your own application without speaking LSP or launching the standalone server process.
 
+## Module Purpose
+
+This module owns the transport-agnostic engine and API surface:
+
+- `CoreFacade` defines the operations for open/change/analyze/completion/definition.
+- `CoreServer` builds a ready-to-use in-process server with `ServiceLoader` plugin discovery.
+- `SymbolIndex` and provider hooks back source symbols with lazy external symbol lookup.
+
 ## Dependencies
 
 Add `jvmpls-core` plus the language plugins you want on the runtime classpath.
@@ -13,6 +21,12 @@ Add `jvmpls-core` plus the language plugins you want on the runtime classpath.
   <dependency>
     <groupId>se.alipsa.jvmpls</groupId>
     <artifactId>jvmpls-core</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+  </dependency>
+
+  <dependency>
+    <groupId>se.alipsa.jvmpls</groupId>
+    <artifactId>jvmpls-classpath</artifactId>
     <version>1.0.0-SNAPSHOT</version>
   </dependency>
 
@@ -33,6 +47,7 @@ Add `jvmpls-core` plus the language plugins you want on the runtime classpath.
 Notes:
 
 - `jvmpls-core` provides the transport-agnostic API.
+- `jvmpls-classpath` enables external JDK and dependency JAR resolution.
 - `jvmpls-java` and `jvmpls-groovy` are discovered via `ServiceLoader`.
 - If a plugin is not on the runtime classpath, files for that language will not be handled.
 
@@ -53,6 +68,9 @@ try (CoreServer server = CoreServer.createDefault((uri, diagnostics) -> {
 - plugin discovery via `ServiceLoader`
 - symbol index and document store setup
 - a diagnostics callback you provide
+- JDK symbol resolution by default
+
+The zero-argument classpath default is intentional. It avoids treating the host process classpath as the workspace classpath.
 
 ## Minimal Example
 
@@ -81,6 +99,20 @@ public class EmbeddedExample {
       System.out.println("Definition: " + definition);
     }
   }
+}
+```
+
+If you want external dependency JARs or compiled class directories, use the explicit overload:
+
+```java
+List<String> classpath = List.of(
+    "/path/to/dependency.jar",
+    "/path/to/build/classes/java/main"
+);
+Path targetJdk = Path.of(System.getProperty("java.home"));
+
+try (CoreServer server = CoreServer.createDefault(diagnosticsPublisher, classpath, targetJdk)) {
+  // workspace-specific external symbols are now available
 }
 ```
 

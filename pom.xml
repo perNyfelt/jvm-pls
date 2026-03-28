@@ -7,6 +7,7 @@
 
   <modules>
     <module>jvmpls-core</module>
+    <module>jvmpls-classpath</module>
     <module>jvmpls-java</module>
     <module>jvmpls-groovy</module>
     <module>jvmpls-server</module>
@@ -25,6 +26,11 @@
         <groupId>io.github.classgraph</groupId>
         <artifactId>classgraph</artifactId>
         <version>4.8.184</version>
+      </dependency>
+      <dependency>
+        <groupId>org.ow2.asm</groupId>
+        <artifactId>asm</artifactId>
+        <version>9.8</version>
       </dependency>
       <dependency>
         <groupId>org.junit.jupiter</groupId>

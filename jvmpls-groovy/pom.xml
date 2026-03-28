@@ -42,6 +42,12 @@
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
     </dependency>
+    <dependency>
+      <groupId>se.alipsa.jvmpls</groupId>
+      <artifactId>jvmpls-classpath</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
