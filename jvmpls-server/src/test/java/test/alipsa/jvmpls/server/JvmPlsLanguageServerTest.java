@@ -1,5 +1,15 @@
 package test.alipsa.jvmpls.server;
 
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.*;
+
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -9,30 +19,18 @@ import org.eclipse.lsp4j.services.LanguageServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import se.alipsa.jvmpls.server.JvmPlsLanguageServer;
 
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-
 /**
- * Integration tests that exercise the full LSP lifecycle over JSON-RPC
- * using piped streams to connect client and server in-process.
+ * Integration tests that exercise the full LSP lifecycle over JSON-RPC using piped streams to
+ * connect client and server in-process.
  */
 class JvmPlsLanguageServerTest {
 
   private static final int TIMEOUT_SECONDS = 30;
-  private static final String WORKSPACE_MANAGER_LOGGER =
-      "se.alipsa.jvmpls.server.WorkspaceManager";
-  private static final String REMOTE_ENDPOINT_LOGGER =
-      "org.eclipse.lsp4j.jsonrpc.RemoteEndpoint";
+  private static final String WORKSPACE_MANAGER_LOGGER = "se.alipsa.jvmpls.server.WorkspaceManager";
+  private static final String REMOTE_ENDPOINT_LOGGER = "org.eclipse.lsp4j.jsonrpc.RemoteEndpoint";
 
   private JvmPlsLanguageServer server;
   private LanguageServer serverProxy;
@@ -128,7 +126,8 @@ class JvmPlsLanguageServerTest {
 
     CompletionOptions completionProvider = result.getCapabilities().getCompletionProvider();
     assertNotNull(completionProvider, "completionProvider should not be null");
-    assertTrue(completionProvider.getTriggerCharacters().contains("."),
+    assertTrue(
+        completionProvider.getTriggerCharacters().contains("."),
         "trigger characters should include '.'");
 
     assertNotNull(result.getServerInfo(), "serverInfo should not be null");
@@ -145,7 +144,8 @@ class JvmPlsLanguageServerTest {
 
     Path dir = Files.createTempDirectory("jvm-pls-lsp-test");
     Path file = dir.resolve("Hello.java");
-    String code = """
+    String code =
+        """
         public class Hello {
           void greet() { System.out.println("hi"); }
         }
@@ -153,8 +153,9 @@ class JvmPlsLanguageServerTest {
     Files.writeString(file, code, StandardCharsets.UTF_8);
     String uri = file.toUri().toString();
 
-    serverProxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-        new TextDocumentItem(uri, "java", 1, code)));
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, code)));
 
     // Wait for diagnostics to arrive (async via piped streams)
     PublishDiagnosticsParams diagnostics = testClient.awaitDiagnostics(uri, TIMEOUT_SECONDS);
@@ -175,35 +176,42 @@ class JvmPlsLanguageServerTest {
 
     // Foo.java defines class Foo in package com.example
     Path fooFile = pkgDir.resolve("Foo.java");
-    String fooCode = "package com.example;\n\npublic class Foo {\n  public void doSomething() {}\n}\n";
+    String fooCode =
+        "package com.example;\n\npublic class Foo {\n  public void doSomething() {}\n}\n";
     Files.writeString(fooFile, fooCode, StandardCharsets.UTF_8);
     String fooUri = fooFile.toUri().toString();
 
     // Bar.java references "Fo" - cursor at end of "Fo" in package com.example
     Path barFile = pkgDir.resolve("Bar.java");
-    String barCode = "package com.example;\n\npublic class Bar {\n  void test() {\n    Fo\n  }\n}\n";
+    String barCode =
+        "package com.example;\n\npublic class Bar {\n  void test() {\n    Fo\n  }\n}\n";
     Files.writeString(barFile, barCode, StandardCharsets.UTF_8);
     String barUri = barFile.toUri().toString();
 
     // Open both files to index them
-    serverProxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-        new TextDocumentItem(fooUri, "java", 1, fooCode)));
-    serverProxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-        new TextDocumentItem(barUri, "java", 1, barCode)));
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(fooUri, "java", 1, fooCode)));
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(barUri, "java", 1, barCode)));
 
-    assertNotNull(testClient.awaitDiagnostics(fooUri, TIMEOUT_SECONDS),
+    assertNotNull(
+        testClient.awaitDiagnostics(fooUri, TIMEOUT_SECONDS),
         "should have received publishDiagnostics for " + fooUri);
-    assertNotNull(testClient.awaitDiagnostics(barUri, TIMEOUT_SECONDS),
+    assertNotNull(
+        testClient.awaitDiagnostics(barUri, TIMEOUT_SECONDS),
         "should have received publishDiagnostics for " + barUri);
 
     // Request completion at the end of "Fo" in barCode
     // Line 4: "    Fo" -> line index 4, character 6
-    CompletionParams completionParams = new CompletionParams(
-        new TextDocumentIdentifier(barUri),
-        new Position(4, 6));
+    CompletionParams completionParams =
+        new CompletionParams(new TextDocumentIdentifier(barUri), new Position(4, 6));
 
     Either<List<CompletionItem>, CompletionList> result =
-        serverProxy.getTextDocumentService().completion(completionParams)
+        serverProxy
+            .getTextDocumentService()
+            .completion(completionParams)
             .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
     assertNotNull(result, "completion result should not be null");
@@ -216,11 +224,11 @@ class JvmPlsLanguageServerTest {
     }
 
     assertNotNull(items, "completion items should not be null");
-    boolean containsFoo = items.stream()
-        .anyMatch(item -> item.getLabel().contains("Foo"));
-    assertTrue(containsFoo,
-        "completion should contain 'Foo', got: " + items.stream()
-            .map(CompletionItem::getLabel).toList());
+    boolean containsFoo = items.stream().anyMatch(item -> item.getLabel().contains("Foo"));
+    assertTrue(
+        containsFoo,
+        "completion should contain 'Foo', got: "
+            + items.stream().map(CompletionItem::getLabel).toList());
   }
 
   // -------------------------------------------------------------------------
@@ -232,8 +240,7 @@ class JvmPlsLanguageServerTest {
     params.setCapabilities(new ClientCapabilities());
     params.setProcessId((int) ProcessHandle.current().pid());
 
-    InitializeResult result = serverProxy.initialize(params)
-        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    InitializeResult result = serverProxy.initialize(params).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
     serverProxy.initialized(new InitializedParams());
 
@@ -285,9 +292,7 @@ class JvmPlsLanguageServerTest {
       // no-op
     }
 
-    /**
-     * Wait for a publishDiagnostics call for the given URI, polling with timeout.
-     */
+    /** Wait for a publishDiagnostics call for the given URI, polling with timeout. */
     PublishDiagnosticsParams awaitDiagnostics(String uri, int timeoutSeconds) throws Exception {
       long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
       while (System.currentTimeMillis() < deadline) {

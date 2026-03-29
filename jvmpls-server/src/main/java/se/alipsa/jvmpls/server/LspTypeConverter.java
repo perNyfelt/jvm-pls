@@ -1,13 +1,13 @@
 package se.alipsa.jvmpls.server;
 
-import se.alipsa.jvmpls.core.model.Diagnostic;
-
 import java.util.List;
 import java.util.stream.Collectors;
 
+import se.alipsa.jvmpls.core.model.Diagnostic;
+
 /**
- * Stateless utility class that maps between {@code se.alipsa.jvmpls.core.model.*} types
- * and {@code org.eclipse.lsp4j.*} types.
+ * Stateless utility class that maps between {@code se.alipsa.jvmpls.core.model.*} types and {@code
+ * org.eclipse.lsp4j.*} types.
  */
 public final class LspTypeConverter {
 
@@ -49,10 +49,10 @@ public final class LspTypeConverter {
 
   public static org.eclipse.lsp4j.DiagnosticSeverity toLsp(Diagnostic.Severity severity) {
     return switch (severity) {
-      case ERROR       -> org.eclipse.lsp4j.DiagnosticSeverity.Error;
-      case WARNING     -> org.eclipse.lsp4j.DiagnosticSeverity.Warning;
+      case ERROR -> org.eclipse.lsp4j.DiagnosticSeverity.Error;
+      case WARNING -> org.eclipse.lsp4j.DiagnosticSeverity.Warning;
       case INFORMATION -> org.eclipse.lsp4j.DiagnosticSeverity.Information;
-      case HINT        -> org.eclipse.lsp4j.DiagnosticSeverity.Hint;
+      case HINT -> org.eclipse.lsp4j.DiagnosticSeverity.Hint;
     };
   }
 
@@ -84,7 +84,8 @@ public final class LspTypeConverter {
   // CompletionItem
   // -------------------------------------------------------------------------
 
-  public static org.eclipse.lsp4j.CompletionItem toLsp(se.alipsa.jvmpls.core.model.CompletionItem core) {
+  public static org.eclipse.lsp4j.CompletionItem toLsp(
+      se.alipsa.jvmpls.core.model.CompletionItem core) {
     org.eclipse.lsp4j.CompletionItem lsp = new org.eclipse.lsp4j.CompletionItem(core.getLabel());
     String detail = core.getDetail();
     String typeDetail = core.getTypeDetail();
@@ -95,9 +96,8 @@ public final class LspTypeConverter {
     lsp.setInsertText(core.getInsertText());
     List<se.alipsa.jvmpls.core.model.TextEdit> edits = core.getAdditionalTextEdits();
     if (edits != null && !edits.isEmpty()) {
-      lsp.setAdditionalTextEdits(edits.stream()
-          .map(LspTypeConverter::toLsp)
-          .collect(Collectors.toList()));
+      lsp.setAdditionalTextEdits(
+          edits.stream().map(LspTypeConverter::toLsp).collect(Collectors.toList()));
     }
     return lsp;
   }
@@ -108,15 +108,11 @@ public final class LspTypeConverter {
 
   public static List<org.eclipse.lsp4j.Diagnostic> toLspDiagnostics(
       List<? extends Diagnostic> diagnostics) {
-    return diagnostics.stream()
-        .map(LspTypeConverter::toLsp)
-        .collect(Collectors.toList());
+    return diagnostics.stream().map(LspTypeConverter::toLsp).collect(Collectors.toList());
   }
 
   public static List<org.eclipse.lsp4j.CompletionItem> toLspCompletionItems(
       List<? extends se.alipsa.jvmpls.core.model.CompletionItem> items) {
-    return items.stream()
-        .map(LspTypeConverter::toLsp)
-        .collect(Collectors.toList());
+    return items.stream().map(LspTypeConverter::toLsp).collect(Collectors.toList());
   }
 }

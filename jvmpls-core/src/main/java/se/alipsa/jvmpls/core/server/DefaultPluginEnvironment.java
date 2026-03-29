@@ -1,13 +1,13 @@
 package se.alipsa.jvmpls.core.server;
 
-import se.alipsa.jvmpls.core.CoreQuery;
-import se.alipsa.jvmpls.core.PluginEnvironment;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import se.alipsa.jvmpls.core.CoreQuery;
+import se.alipsa.jvmpls.core.PluginEnvironment;
 
 /** Minimal PluginEnvironment used by the in-proc server bootstrap. */
 final class DefaultPluginEnvironment implements PluginEnvironment {
@@ -24,19 +24,30 @@ final class DefaultPluginEnvironment implements PluginEnvironment {
     this.classpath = Objects.requireNonNull(classpath);
   }
 
-  @Override public CoreQuery core() { return core; }
+  @Override
+  public CoreQuery core() {
+    return core;
+  }
 
-  @Override public Executor executor() { return executor; }
+  @Override
+  public Executor executor() {
+    return executor;
+  }
 
-  @Override public List<String> classpath() { return classpath; }
+  @Override
+  public List<String> classpath() {
+    return classpath;
+  }
 
-  @Override public void log(String level, String message, Throwable t) {
-    Level julLevel = switch (level) {
-      case "ERROR" -> Level.SEVERE;
-      case "WARN" -> Level.WARNING;
-      case "INFO" -> Level.FINE;
-      default -> Level.FINE;
-    };
+  @Override
+  public void log(String level, String message, Throwable t) {
+    Level julLevel =
+        switch (level) {
+          case "ERROR" -> Level.SEVERE;
+          case "WARN" -> Level.WARNING;
+          case "INFO" -> Level.FINE;
+          default -> Level.FINE;
+        };
     if (t == null) {
       LOG.log(julLevel, message);
     } else {

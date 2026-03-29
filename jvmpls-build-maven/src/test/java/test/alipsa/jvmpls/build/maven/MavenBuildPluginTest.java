@@ -1,15 +1,16 @@
 package test.alipsa.jvmpls.build.maven;
 
-import org.junit.jupiter.api.Test;
-import se.alipsa.jvmpls.build.BuildModel;
-import se.alipsa.jvmpls.build.maven.MavenBuildPlugin;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+
+import se.alipsa.jvmpls.build.BuildModel;
+import se.alipsa.jvmpls.build.maven.MavenBuildPlugin;
 
 class MavenBuildPluginTest {
 
@@ -18,7 +19,9 @@ class MavenBuildPluginTest {
     Path root = Files.createTempDirectory("jvmpls-maven-build");
     Files.createDirectories(root.resolve("src/main/java/demo"));
     Files.createDirectories(root.resolve("target/classes"));
-    Files.writeString(root.resolve("pom.xml"), """
+    Files.writeString(
+        root.resolve("pom.xml"),
+        """
         <project xmlns="http://maven.apache.org/POM/4.0.0">
           <modelVersion>4.0.0</modelVersion>
           <groupId>demo</groupId>
@@ -32,15 +35,17 @@ class MavenBuildPluginTest {
             </dependency>
           </dependencies>
         </project>
-        """, StandardCharsets.UTF_8);
+        """,
+        StandardCharsets.UTF_8);
 
     BuildModel model = new MavenBuildPlugin().resolve(root);
 
     assertEquals("maven", model.toolId());
     assertTrue(model.sourceRoots().contains(root.resolve("src/main/java")));
     assertTrue(model.outputDirectories().contains(root.resolve("target/classes")));
-    assertTrue(model.classpathEntries().stream()
-        .anyMatch(entry -> entry.contains("classgraph-4.8.184.jar")));
+    assertTrue(
+        model.classpathEntries().stream()
+            .anyMatch(entry -> entry.contains("classgraph-4.8.184.jar")));
     assertTrue(model.watchedFiles().contains(root.resolve("pom.xml")));
   }
 
@@ -49,7 +54,9 @@ class MavenBuildPluginTest {
     Path root = Files.createTempDirectory("jvmpls-maven-multi");
     Path moduleA = Files.createDirectories(root.resolve("module-a/target/classes"));
     Path moduleB = Files.createDirectories(root.resolve("module-b/target/classes"));
-    Files.writeString(root.resolve("pom.xml"), """
+    Files.writeString(
+        root.resolve("pom.xml"),
+        """
         <project xmlns="http://maven.apache.org/POM/4.0.0">
           <modelVersion>4.0.0</modelVersion>
           <groupId>demo</groupId>
@@ -61,8 +68,11 @@ class MavenBuildPluginTest {
             <module>module-b</module>
           </modules>
         </project>
-        """, StandardCharsets.UTF_8);
-    Files.writeString(root.resolve("module-a/pom.xml"), """
+        """,
+        StandardCharsets.UTF_8);
+    Files.writeString(
+        root.resolve("module-a/pom.xml"),
+        """
         <project xmlns="http://maven.apache.org/POM/4.0.0">
           <modelVersion>4.0.0</modelVersion>
           <parent>
@@ -72,8 +82,11 @@ class MavenBuildPluginTest {
           </parent>
           <artifactId>module-a</artifactId>
         </project>
-        """, StandardCharsets.UTF_8);
-    Files.writeString(root.resolve("module-b/pom.xml"), """
+        """,
+        StandardCharsets.UTF_8);
+    Files.writeString(
+        root.resolve("module-b/pom.xml"),
+        """
         <project xmlns="http://maven.apache.org/POM/4.0.0">
           <modelVersion>4.0.0</modelVersion>
           <parent>
@@ -90,7 +103,8 @@ class MavenBuildPluginTest {
             </dependency>
           </dependencies>
         </project>
-        """, StandardCharsets.UTF_8);
+        """,
+        StandardCharsets.UTF_8);
 
     BuildModel model = new MavenBuildPlugin().resolve(root);
 

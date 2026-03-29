@@ -4,9 +4,9 @@ import java.util.Objects;
 
 /**
  * A source location: a document URI plus a range within that document.
- * <p>
- * The URI is typically a {@code file://} URL, but may also be a {@code jar://},
- * {@code mem://}, or any scheme your server supports.
+ *
+ * <p>The URI is typically a {@code file://} URL, but may also be a {@code jar://}, {@code mem://},
+ * or any scheme your server supports.
  */
 public final class Location {
   private final String uri;

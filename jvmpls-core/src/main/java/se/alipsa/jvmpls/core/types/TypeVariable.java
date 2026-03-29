@@ -16,8 +16,8 @@ public record TypeVariable(String name, List<JvmType> upperBounds) implements Jv
     if (upperBounds.isEmpty()) {
       return name;
     }
-    return name + " extends " + upperBounds.stream()
-        .map(JvmType::displayName)
-        .collect(Collectors.joining(" & "));
+    return name
+        + " extends "
+        + upperBounds.stream().map(JvmType::displayName).collect(Collectors.joining(" & "));
   }
 }

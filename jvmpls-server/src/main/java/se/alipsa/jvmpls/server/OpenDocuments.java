@@ -1,12 +1,12 @@
 package se.alipsa.jvmpls.server;
 
-import se.alipsa.jvmpls.core.CoreFacade;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import se.alipsa.jvmpls.core.CoreFacade;
 
 final class OpenDocuments {
 
@@ -19,8 +19,8 @@ final class OpenDocuments {
   }
 
   void change(String uri, int version, String text) {
-    documentsByUri.computeIfPresent(uri,
-        (ignored, existing) -> new DocumentState(uri, existing.languageId(), version, text));
+    documentsByUri.computeIfPresent(
+        uri, (ignored, existing) -> new DocumentState(uri, existing.languageId(), version, text));
   }
 
   void close(String uri) {
@@ -41,6 +41,5 @@ final class OpenDocuments {
     }
   }
 
-  record DocumentState(String uri, String languageId, int version, String text) {
-  }
+  record DocumentState(String uri, String languageId, int version, String text) {}
 }

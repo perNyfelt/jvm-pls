@@ -1,12 +1,5 @@
 package se.alipsa.jvmpls.classpath;
 
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.FieldVisitor;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
-import se.alipsa.jvmpls.core.model.SymbolInfo;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -18,6 +11,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+
+import se.alipsa.jvmpls.core.model.SymbolInfo;
 
 public final class BinaryTypeReader {
   private static final Logger LOG = Logger.getLogger(BinaryTypeReader.class.getName());
@@ -40,7 +41,8 @@ public final class BinaryTypeReader {
     try (InputStream inputStream = URI.create(resourceUri).toURL().openStream()) {
       ClassReader reader = new ClassReader(inputStream);
       ReaderVisitor visitor = new ReaderVisitor();
-      reader.accept(visitor, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+      reader.accept(
+          visitor, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
       return new BinaryTypeDetails(
           visitor.signature == null ? "" : visitor.signature,
           visitor.modifiers,
@@ -63,35 +65,47 @@ public final class BinaryTypeReader {
     }
 
     @Override
-    public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+    public void visit(
+        int version,
+        int access,
+        String name,
+        String signature,
+        String superName,
+        String[] interfaces) {
       this.signature = signature;
       this.modifiers = toModifiers(access);
     }
 
     @Override
-    public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
-      members.add(new BinaryMemberDetails(
-          SymbolInfo.Kind.FIELD,
-          name,
-          descriptor,
-          signature == null ? "" : signature,
-          toModifiers(access),
-          List.of()));
+    public FieldVisitor visitField(
+        int access, String name, String descriptor, String signature, Object value) {
+      members.add(
+          new BinaryMemberDetails(
+              SymbolInfo.Kind.FIELD,
+              name,
+              descriptor,
+              signature == null ? "" : signature,
+              toModifiers(access),
+              List.of()));
       return null;
     }
 
     @Override
-    public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+    public MethodVisitor visitMethod(
+        int access, String name, String descriptor, String signature, String[] exceptions) {
       if (!"<clinit>".equals(name)) {
-        members.add(new BinaryMemberDetails(
-            SymbolInfo.Kind.METHOD,
-            name,
-            descriptor,
-            signature == null ? "" : signature,
-            toModifiers(access),
-            exceptions == null ? List.of() : java.util.Arrays.stream(exceptions)
-                .map(internalName -> internalName.replace('/', '.'))
-                .toList()));
+        members.add(
+            new BinaryMemberDetails(
+                SymbolInfo.Kind.METHOD,
+                name,
+                descriptor,
+                signature == null ? "" : signature,
+                toModifiers(access),
+                exceptions == null
+                    ? List.of()
+                    : java.util.Arrays.stream(exceptions)
+                        .map(internalName -> internalName.replace('/', '.'))
+                        .toList()));
       }
       return null;
     }
@@ -101,7 +115,8 @@ public final class BinaryTypeReader {
       if ((access & Opcodes.ACC_PUBLIC) != 0) out.add("public");
       if ((access & Opcodes.ACC_PROTECTED) != 0) out.add("protected");
       if ((access & Opcodes.ACC_PRIVATE) != 0) out.add("private");
-      if ((access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED | Opcodes.ACC_PRIVATE)) == 0) out.add("package-private");
+      if ((access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED | Opcodes.ACC_PRIVATE)) == 0)
+        out.add("package-private");
       if ((access & Opcodes.ACC_ABSTRACT) != 0) out.add("abstract");
       if ((access & Opcodes.ACC_FINAL) != 0) out.add("final");
       if ((access & Opcodes.ACC_STATIC) != 0) out.add("static");

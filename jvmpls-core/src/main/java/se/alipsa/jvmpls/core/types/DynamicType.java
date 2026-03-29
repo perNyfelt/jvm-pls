@@ -4,8 +4,7 @@ public final class DynamicType implements JvmType {
 
   public static final DynamicType INSTANCE = new DynamicType();
 
-  private DynamicType() {
-  }
+  private DynamicType() {}
 
   @Override
   public String displayName() {

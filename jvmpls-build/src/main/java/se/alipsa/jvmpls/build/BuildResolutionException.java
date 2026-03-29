@@ -1,8 +1,8 @@
 package se.alipsa.jvmpls.build;
 
 /**
- * Checked exception raised when a build tool plugin cannot resolve a workspace
- * or when build tool selection fails.
+ * Checked exception raised when a build tool plugin cannot resolve a workspace or when build tool
+ * selection fails.
  */
 public class BuildResolutionException extends Exception {
 

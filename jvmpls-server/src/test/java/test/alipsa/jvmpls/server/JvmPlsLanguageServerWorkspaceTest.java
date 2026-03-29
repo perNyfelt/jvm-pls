@@ -1,6 +1,21 @@
 package test.alipsa.jvmpls.server;
 
-import io.github.classgraph.ClassGraph;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
@@ -19,28 +34,14 @@ import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import se.alipsa.jvmpls.server.JvmPlsLanguageServer;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import io.github.classgraph.ClassGraph;
 
 class JvmPlsLanguageServerWorkspaceTest {
 
-  private static final String WORKSPACE_MANAGER_LOGGER =
-      "se.alipsa.jvmpls.server.WorkspaceManager";
+  private static final String WORKSPACE_MANAGER_LOGGER = "se.alipsa.jvmpls.server.WorkspaceManager";
   private static final String TEXT_DOCUMENT_SERVICE_LOGGER =
       "se.alipsa.jvmpls.server.JvmPlsTextDocumentService";
   private TestLogCapture workspaceLogs;
@@ -68,24 +69,31 @@ class JvmPlsLanguageServerWorkspaceTest {
   void completion_isRejectedBeforeInitialize() {
     JvmPlsLanguageServer server = new JvmPlsLanguageServer();
 
-    CompletionException failure = assertThrows(
-        CompletionException.class,
-        () -> server.getTextDocumentService().completion(
-            new CompletionParams(new TextDocumentIdentifier("file:///Test.java"), new Position(0, 0)))
-            .join());
+    CompletionException failure =
+        assertThrows(
+            CompletionException.class,
+            () ->
+                server
+                    .getTextDocumentService()
+                    .completion(
+                        new CompletionParams(
+                            new TextDocumentIdentifier("file:///Test.java"), new Position(0, 0)))
+                    .join());
 
     assertTrue(failure.getCause() instanceof ResponseErrorException);
     ResponseErrorException error = (ResponseErrorException) failure.getCause();
     assertEquals(ResponseErrorCode.InvalidRequest.getValue(), error.getResponseError().getCode());
-    assertTrue(textDocumentLogs.contains(Level.WARNING,
-        "Rejecting textDocument/completion before initialization"));
+    assertTrue(
+        textDocumentLogs.contains(
+            Level.WARNING, "Rejecting textDocument/completion before initialization"));
   }
 
   @Test
   void initialize_resolvesMavenWorkspaceClasspath() throws Exception {
     Path root = createMavenWorkspaceWithDependency(true);
     Path javaFile = root.resolve("src/main/java/demo/Main.java");
-    String code = """
+    String code =
+        """
         package demo;
         import io.github.classgraph.ClassGraph;
         public class Main {
@@ -98,14 +106,23 @@ class JvmPlsLanguageServerWorkspaceTest {
     server.connect(new CapturingLanguageClient());
     initialize(server, root, null);
 
-    server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-        new TextDocumentItem(javaFile.toUri().toString(), "java", 1, code)));
+    server
+        .getTextDocumentService()
+        .didOpen(
+            new DidOpenTextDocumentParams(
+                new TextDocumentItem(javaFile.toUri().toString(), "java", 1, code)));
 
-    Either<List<? extends org.eclipse.lsp4j.Location>, List<? extends org.eclipse.lsp4j.LocationLink>> result =
-        server.getTextDocumentService().definition(
-            new DefinitionParams(new TextDocumentIdentifier(javaFile.toUri().toString()),
-                wordPosition(code, "ClassGraph")))
-            .get(5, TimeUnit.SECONDS);
+    Either<
+            List<? extends org.eclipse.lsp4j.Location>,
+            List<? extends org.eclipse.lsp4j.LocationLink>>
+        result =
+            server
+                .getTextDocumentService()
+                .definition(
+                    new DefinitionParams(
+                        new TextDocumentIdentifier(javaFile.toUri().toString()),
+                        wordPosition(code, "ClassGraph")))
+                .get(5, TimeUnit.SECONDS);
 
     assertTrue(result.isLeft());
     assertFalse(result.getLeft().isEmpty());
@@ -114,10 +131,12 @@ class JvmPlsLanguageServerWorkspaceTest {
 
   @Test
   void initialize_usesManualClasspathOverrideWithoutWorkspaceRoot() throws Exception {
-    Path classGraphJar = Path.of(ClassGraph.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+    Path classGraphJar =
+        Path.of(ClassGraph.class.getProtectionDomain().getCodeSource().getLocation().toURI());
     Path root = Files.createTempDirectory("jvmpls-manual-classpath");
     Path javaFile = root.resolve("Main.java");
-    String code = """
+    String code =
+        """
         import io.github.classgraph.ClassGraph;
         class Main {
           ClassGraph graph;
@@ -129,14 +148,23 @@ class JvmPlsLanguageServerWorkspaceTest {
     server.connect(new CapturingLanguageClient());
     initialize(server, null, Map.of("classpath", List.of(classGraphJar.toString())));
 
-    server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-        new TextDocumentItem(javaFile.toUri().toString(), "java", 1, code)));
+    server
+        .getTextDocumentService()
+        .didOpen(
+            new DidOpenTextDocumentParams(
+                new TextDocumentItem(javaFile.toUri().toString(), "java", 1, code)));
 
-    Either<List<? extends org.eclipse.lsp4j.Location>, List<? extends org.eclipse.lsp4j.LocationLink>> result =
-        server.getTextDocumentService().definition(
-            new DefinitionParams(new TextDocumentIdentifier(javaFile.toUri().toString()),
-                wordPosition(code, "ClassGraph")))
-            .get(5, TimeUnit.SECONDS);
+    Either<
+            List<? extends org.eclipse.lsp4j.Location>,
+            List<? extends org.eclipse.lsp4j.LocationLink>>
+        result =
+            server
+                .getTextDocumentService()
+                .definition(
+                    new DefinitionParams(
+                        new TextDocumentIdentifier(javaFile.toUri().toString()),
+                        wordPosition(code, "ClassGraph")))
+                .get(5, TimeUnit.SECONDS);
 
     assertTrue(result.isLeft());
     assertFalse(result.getLeft().isEmpty());
@@ -146,7 +174,8 @@ class JvmPlsLanguageServerWorkspaceTest {
   void didChangeWatchedFiles_refreshesResolvedClasspath() throws Exception {
     Path root = createMavenWorkspaceWithDependency(true);
     Path javaFile = root.resolve("src/main/java/demo/Main.java");
-    String code = """
+    String code =
+        """
         package demo;
         import io.github.classgraph.ClassGraph;
         public class Main {
@@ -160,26 +189,41 @@ class JvmPlsLanguageServerWorkspaceTest {
     initialize(server, root, null);
     String uri = javaFile.toUri().toString();
 
-    server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-        new TextDocumentItem(uri, "java", 1, code)));
+    server
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, code)));
     assertDefinitionPresent(server, uri, code);
 
-    Files.writeString(root.resolve("pom.xml"), """
+    Files.writeString(
+        root.resolve("pom.xml"),
+        """
         <project xmlns="http://maven.apache.org/POM/4.0.0">
           <modelVersion>4.0.0</modelVersion>
           <groupId>demo</groupId>
           <artifactId>workspace</artifactId>
           <version>1.0.0</version>
         </project>
-        """, StandardCharsets.UTF_8);
+        """,
+        StandardCharsets.UTF_8);
 
-    server.getWorkspaceService().didChangeWatchedFiles(new DidChangeWatchedFilesParams(List.of(
-        new FileEvent(root.resolve("pom.xml").toUri().toString(), FileChangeType.Changed))));
+    server
+        .getWorkspaceService()
+        .didChangeWatchedFiles(
+            new DidChangeWatchedFilesParams(
+                List.of(
+                    new FileEvent(
+                        root.resolve("pom.xml").toUri().toString(), FileChangeType.Changed))));
 
-    Either<List<? extends org.eclipse.lsp4j.Location>, List<? extends org.eclipse.lsp4j.LocationLink>> result =
-        server.getTextDocumentService().definition(
-            new DefinitionParams(new TextDocumentIdentifier(uri), wordPosition(code, "ClassGraph")))
-            .get(5, TimeUnit.SECONDS);
+    Either<
+            List<? extends org.eclipse.lsp4j.Location>,
+            List<? extends org.eclipse.lsp4j.LocationLink>>
+        result =
+            server
+                .getTextDocumentService()
+                .definition(
+                    new DefinitionParams(
+                        new TextDocumentIdentifier(uri), wordPosition(code, "ClassGraph")))
+                .get(5, TimeUnit.SECONDS);
 
     assertTrue(result.isLeft());
     assertTrue(result.getLeft().isEmpty(), "definition should disappear after dependency refresh");
@@ -191,7 +235,8 @@ class JvmPlsLanguageServerWorkspaceTest {
     Path javaFile = root.resolve("src/main/java/demo/Main.java");
     Files.createDirectories(javaFile.getParent());
     Files.writeString(root.resolve("pom.xml"), "<project><broken>", StandardCharsets.UTF_8);
-    String code = """
+    String code =
+        """
         package demo;
         public class Main {
           String value;
@@ -204,19 +249,30 @@ class JvmPlsLanguageServerWorkspaceTest {
     server.connect(client);
     initialize(server, root, null);
 
-    assertTrue(client.messages.stream().anyMatch(message ->
-            message.getMessage().contains("falling back to JDK-only symbols")),
+    assertTrue(
+        client.messages.stream()
+            .anyMatch(message -> message.getMessage().contains("falling back to JDK-only symbols")),
         "client should be warned when workspace resolution falls back");
-    assertTrue(workspaceLogs.contains(Level.WARNING, "Workspace resolution failed after initialize"));
+    assertTrue(
+        workspaceLogs.contains(Level.WARNING, "Workspace resolution failed after initialize"));
 
-    server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-        new TextDocumentItem(javaFile.toUri().toString(), "java", 1, code)));
+    server
+        .getTextDocumentService()
+        .didOpen(
+            new DidOpenTextDocumentParams(
+                new TextDocumentItem(javaFile.toUri().toString(), "java", 1, code)));
 
-    Either<List<? extends org.eclipse.lsp4j.Location>, List<? extends org.eclipse.lsp4j.LocationLink>> result =
-        server.getTextDocumentService().definition(
-            new DefinitionParams(new TextDocumentIdentifier(javaFile.toUri().toString()),
-                wordPosition(code, "String")))
-            .get(5, TimeUnit.SECONDS);
+    Either<
+            List<? extends org.eclipse.lsp4j.Location>,
+            List<? extends org.eclipse.lsp4j.LocationLink>>
+        result =
+            server
+                .getTextDocumentService()
+                .definition(
+                    new DefinitionParams(
+                        new TextDocumentIdentifier(javaFile.toUri().toString()),
+                        wordPosition(code, "String")))
+                .get(5, TimeUnit.SECONDS);
 
     assertTrue(result.isLeft(), "fallback initialization should keep requests functional");
   }
@@ -231,23 +287,32 @@ class JvmPlsLanguageServerWorkspaceTest {
     params.setRootUri("vscode-remote://ssh-remote+demo/workspace");
     server.initialize(params).get(5, TimeUnit.SECONDS);
 
-    assertTrue(client.messages.stream().anyMatch(message ->
-            message.getMessage().contains("Ignoring unsupported workspace URI")),
+    assertTrue(
+        client.messages.stream()
+            .anyMatch(
+                message -> message.getMessage().contains("Ignoring unsupported workspace URI")),
         "client should be warned about unsupported non-file workspace URIs");
     assertTrue(workspaceLogs.contains(Level.WARNING, "Ignoring unsupported workspace URI"));
   }
 
-  private static void assertDefinitionPresent(JvmPlsLanguageServer server, String uri, String code) throws Exception {
-    Either<List<? extends org.eclipse.lsp4j.Location>, List<? extends org.eclipse.lsp4j.LocationLink>> result =
-        server.getTextDocumentService().definition(
-            new DefinitionParams(new TextDocumentIdentifier(uri), wordPosition(code, "ClassGraph")))
-            .get(5, TimeUnit.SECONDS);
+  private static void assertDefinitionPresent(JvmPlsLanguageServer server, String uri, String code)
+      throws Exception {
+    Either<
+            List<? extends org.eclipse.lsp4j.Location>,
+            List<? extends org.eclipse.lsp4j.LocationLink>>
+        result =
+            server
+                .getTextDocumentService()
+                .definition(
+                    new DefinitionParams(
+                        new TextDocumentIdentifier(uri), wordPosition(code, "ClassGraph")))
+                .get(5, TimeUnit.SECONDS);
     assertTrue(result.isLeft());
     assertFalse(result.getLeft().isEmpty());
   }
 
-  private static void initialize(JvmPlsLanguageServer server, Path root, Object initializationOptions)
-      throws Exception {
+  private static void initialize(
+      JvmPlsLanguageServer server, Path root, Object initializationOptions) throws Exception {
     InitializeParams params = new InitializeParams();
     params.setRootUri(root == null ? null : root.toUri().toString());
     params.setInitializationOptions(initializationOptions);
@@ -269,19 +334,25 @@ class JvmPlsLanguageServerWorkspaceTest {
     return new Position(line, column);
   }
 
-  private static Path createMavenWorkspaceWithDependency(boolean includeDependency) throws Exception {
+  private static Path createMavenWorkspaceWithDependency(boolean includeDependency)
+      throws Exception {
     Path root = Files.createTempDirectory("jvmpls-maven-workspace");
     Files.createDirectories(root.resolve("src/main/java/demo"));
-    String dependencySection = includeDependency ? """
-          <dependencies>
-            <dependency>
-              <groupId>io.github.classgraph</groupId>
-              <artifactId>classgraph</artifactId>
-              <version>4.8.184</version>
-            </dependency>
-          </dependencies>
-        """ : "";
-    Files.writeString(root.resolve("pom.xml"), """
+    String dependencySection =
+        includeDependency
+            ? """
+              <dependencies>
+                <dependency>
+                  <groupId>io.github.classgraph</groupId>
+                  <artifactId>classgraph</artifactId>
+                  <version>4.8.184</version>
+                </dependency>
+              </dependencies>
+            """
+            : "";
+    Files.writeString(
+        root.resolve("pom.xml"),
+        """
         <project xmlns="http://maven.apache.org/POM/4.0.0">
           <modelVersion>4.0.0</modelVersion>
           <groupId>demo</groupId>
@@ -289,7 +360,9 @@ class JvmPlsLanguageServerWorkspaceTest {
           <version>1.0.0</version>
         %s
         </project>
-        """.formatted(dependencySection), StandardCharsets.UTF_8);
+        """
+            .formatted(dependencySection),
+        StandardCharsets.UTF_8);
     return root;
   }
 
@@ -298,12 +371,10 @@ class JvmPlsLanguageServerWorkspaceTest {
     private final List<org.eclipse.lsp4j.MessageParams> messages = new ArrayList<>();
 
     @Override
-    public void telemetryEvent(Object object) {
-    }
+    public void telemetryEvent(Object object) {}
 
     @Override
-    public void publishDiagnostics(PublishDiagnosticsParams diagnostics) {
-    }
+    public void publishDiagnostics(PublishDiagnosticsParams diagnostics) {}
 
     @Override
     public void showMessage(org.eclipse.lsp4j.MessageParams messageParams) {
@@ -317,7 +388,6 @@ class JvmPlsLanguageServerWorkspaceTest {
     }
 
     @Override
-    public void logMessage(org.eclipse.lsp4j.MessageParams message) {
-    }
+    public void logMessage(org.eclipse.lsp4j.MessageParams message) {}
   }
 }

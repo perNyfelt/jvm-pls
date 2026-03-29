@@ -1,15 +1,5 @@
 package se.alipsa.jvmpls.server;
 
-import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
-import org.eclipse.lsp4j.FileEvent;
-import org.eclipse.lsp4j.InitializeParams;
-import org.eclipse.lsp4j.WorkspaceFolder;
-import se.alipsa.jvmpls.build.BuildModel;
-import se.alipsa.jvmpls.build.BuildResolutionException;
-import se.alipsa.jvmpls.build.BuildToolPlugin;
-import se.alipsa.jvmpls.build.BuildToolRegistry;
-import se.alipsa.jvmpls.core.server.DiagnosticsPublisher;
-
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
@@ -21,21 +11,33 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
+import org.eclipse.lsp4j.FileEvent;
+import org.eclipse.lsp4j.InitializeParams;
+import org.eclipse.lsp4j.WorkspaceFolder;
+
+import se.alipsa.jvmpls.build.BuildModel;
+import se.alipsa.jvmpls.build.BuildResolutionException;
+import se.alipsa.jvmpls.build.BuildToolPlugin;
+import se.alipsa.jvmpls.build.BuildToolRegistry;
+import se.alipsa.jvmpls.core.server.DiagnosticsPublisher;
+
 final class WorkspaceManager {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceManager.class.getName());
-  private static final Set<String> GENERIC_BUILD_FILENAMES = Set.of(
-      "pom.xml",
-      "build.gradle",
-      "build.gradle.kts",
-      "settings.gradle",
-      "settings.gradle.kts",
-      "gradle.properties",
-      "gradle-wrapper.properties",
-      "gradle-wrapper.jar",
-      "maven.config",
-      "jvm.config",
-      "toolchains.xml");
+  private static final Set<String> GENERIC_BUILD_FILENAMES =
+      Set.of(
+          "pom.xml",
+          "build.gradle",
+          "build.gradle.kts",
+          "settings.gradle",
+          "settings.gradle.kts",
+          "gradle.properties",
+          "gradle-wrapper.properties",
+          "gradle-wrapper.jar",
+          "maven.config",
+          "jvm.config",
+          "toolchains.xml");
 
   private final BuildToolRegistry buildToolRegistry;
   private final WorkspaceCoreFactory coreFactory;
@@ -48,12 +50,13 @@ final class WorkspaceManager {
   private volatile Path workspaceRoot;
   private volatile BuildModel currentBuildModel;
 
-  WorkspaceManager(BuildToolRegistry buildToolRegistry,
-                   WorkspaceCoreFactory coreFactory,
-                   ReloadableCoreFacade reloadableCore,
-                   OpenDocuments openDocuments,
-                   DiagnosticsPublisher diagnosticsPublisher,
-                   Consumer<String> warningReporter) {
+  WorkspaceManager(
+      BuildToolRegistry buildToolRegistry,
+      WorkspaceCoreFactory coreFactory,
+      ReloadableCoreFacade reloadableCore,
+      OpenDocuments openDocuments,
+      DiagnosticsPublisher diagnosticsPublisher,
+      Consumer<String> warningReporter) {
     this.buildToolRegistry = buildToolRegistry;
     this.coreFactory = coreFactory;
     this.reloadableCore = reloadableCore;
@@ -106,8 +109,11 @@ final class WorkspaceManager {
     try {
       buildModel = resolveBuildModel();
     } catch (BuildResolutionException e) {
-      String message = "Workspace resolution failed after " + reason
-          + "; falling back to JDK-only symbols: " + rootCauseMessage(e);
+      String message =
+          "Workspace resolution failed after "
+              + reason
+              + "; falling back to JDK-only symbols: "
+              + rootCauseMessage(e);
       LOG.log(Level.WARNING, message, e);
       warningReporter.accept(message);
       fallbackToJdkOnly(reason, e);
@@ -119,22 +125,27 @@ final class WorkspaceManager {
 
   private void fallbackToJdkOnly(String reason, Exception cause) {
     try {
-      BuildModel fallback = new BuildModel(
-          "fallback",
-          workspaceRoot,
-          List.of(),
-          List.of(),
-          workspaceSettings.classpathEntries(),
-          List.of(),
-          List.of(),
-          workspaceSettings.targetJdkHome(),
-          List.of());
+      BuildModel fallback =
+          new BuildModel(
+              "fallback",
+              workspaceRoot,
+              List.of(),
+              List.of(),
+              workspaceSettings.classpathEntries(),
+              List.of(),
+              List.of(),
+              workspaceSettings.targetJdkHome(),
+              List.of());
       installBuildModel(fallback, reason);
       LOG.info(() -> "Loaded fallback workspace core after " + reason);
     } catch (Exception fallbackFailure) {
-      String unavailableReason = "Workspace initialization failed after " + reason
-          + ": " + rootCauseMessage(fallbackFailure)
-          + ". Original resolution error: " + rootCauseMessage(cause);
+      String unavailableReason =
+          "Workspace initialization failed after "
+              + reason
+              + ": "
+              + rootCauseMessage(fallbackFailure)
+              + ". Original resolution error: "
+              + rootCauseMessage(cause);
       reloadableCore.setUnavailableReason(unavailableReason);
       LOG.log(Level.SEVERE, "Failed to create fallback workspace core", fallbackFailure);
       warningReporter.accept(unavailableReason);
@@ -143,21 +154,27 @@ final class WorkspaceManager {
   }
 
   private void installBuildModel(BuildModel buildModel, String reason) {
-    WorkspaceCoreFactory.CoreInstance nextCore = coreFactory.create(
-        buildModel.classpathEntries(),
-        buildModel.targetJdkHome(),
-        diagnosticsPublisher);
+    WorkspaceCoreFactory.CoreInstance nextCore =
+        coreFactory.create(
+            buildModel.classpathEntries(), buildModel.targetJdkHome(), diagnosticsPublisher);
     boolean installed = false;
     try {
       openDocuments.replayInto(nextCore.core());
-      reloadableCore.install(nextCore.core(), nextCore.lifecycle(),
-          "Workspace core ready for " + buildModel.toolId());
+      reloadableCore.install(
+          nextCore.core(), nextCore.lifecycle(), "Workspace core ready for " + buildModel.toolId());
       installed = true;
       currentBuildModel = buildModel;
-      LOG.info(() -> "Loaded workspace using " + buildModel.toolId()
-          + " at " + buildModel.projectRoot()
-          + " with " + buildModel.classpathEntries().size() + " classpath entries"
-          + " after " + reason);
+      LOG.info(
+          () ->
+              "Loaded workspace using "
+                  + buildModel.toolId()
+                  + " at "
+                  + buildModel.projectRoot()
+                  + " with "
+                  + buildModel.classpathEntries().size()
+                  + " classpath entries"
+                  + " after "
+                  + reason);
     } catch (RuntimeException e) {
       LOG.log(Level.SEVERE, "Workspace core installation failed after " + reason, e);
       throw e;
@@ -198,9 +215,8 @@ final class WorkspaceManager {
           List.of());
     }
 
-    Optional<BuildToolPlugin> selected = buildToolRegistry.select(
-        workspaceRoot,
-        workspaceSettings.buildToolId());
+    Optional<BuildToolPlugin> selected =
+        buildToolRegistry.select(workspaceRoot, workspaceSettings.buildToolId());
     if (selected.isEmpty()) {
       return new BuildModel(
           "default",

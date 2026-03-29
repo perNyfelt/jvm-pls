@@ -1,14 +1,26 @@
 package se.alipsa.jvmpls.core;
 
-import se.alipsa.jvmpls.core.model.SymbolInfo;
-
 import java.util.List;
 import java.util.Optional;
 
+import se.alipsa.jvmpls.core.model.SymbolInfo;
+
 public interface CoreQuery {
   Optional<SymbolInfo> findByFqn(String fqn);
+
   List<SymbolInfo> findBySimpleName(String simpleName);
+
   List<SymbolInfo> allInPackage(String pkgFqn);
-  default List<SymbolInfo> membersOf(String ownerFqn) { return List.of(); }
-  default List<String> supertypesOf(String typeFqn) { return List.of(); }
+
+  default List<SymbolInfo> membersOf(String ownerFqn) {
+    return List.of();
+  }
+
+  default List<SymbolInfo> constructorsOf(String ownerFqn) {
+    return List.of();
+  }
+
+  default List<String> supertypesOf(String typeFqn) {
+    return List.of();
+  }
 }

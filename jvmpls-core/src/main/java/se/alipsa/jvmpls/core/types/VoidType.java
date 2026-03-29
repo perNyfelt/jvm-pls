@@ -4,8 +4,7 @@ public final class VoidType implements JvmType {
 
   public static final VoidType INSTANCE = new VoidType();
 
-  private VoidType() {
-  }
+  private VoidType() {}
 
   @Override
   public String displayName() {

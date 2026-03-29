@@ -12,9 +12,10 @@ final class ScannedTypeCatalog {
   private final Map<String, List<ScannedTypeDescriptor>> bySimpleName;
   private final Map<String, List<ScannedTypeDescriptor>> byPackage;
 
-  private ScannedTypeCatalog(Map<String, ScannedTypeDescriptor> byFqn,
-                             Map<String, List<ScannedTypeDescriptor>> bySimpleName,
-                             Map<String, List<ScannedTypeDescriptor>> byPackage) {
+  private ScannedTypeCatalog(
+      Map<String, ScannedTypeDescriptor> byFqn,
+      Map<String, List<ScannedTypeDescriptor>> bySimpleName,
+      Map<String, List<ScannedTypeDescriptor>> byPackage) {
     this.byFqn = byFqn;
     this.bySimpleName = bySimpleName;
     this.byPackage = byPackage;
@@ -51,8 +52,12 @@ final class ScannedTypeCatalog {
         return this;
       }
       if (byFqn.putIfAbsent(descriptor.fqName(), descriptor) == null) {
-        bySimpleName.computeIfAbsent(descriptor.simpleName(), key -> new ArrayList<>()).add(descriptor);
-        byPackage.computeIfAbsent(descriptor.packageName(), key -> new ArrayList<>()).add(descriptor);
+        bySimpleName
+            .computeIfAbsent(descriptor.simpleName(), key -> new ArrayList<>())
+            .add(descriptor);
+        byPackage
+            .computeIfAbsent(descriptor.packageName(), key -> new ArrayList<>())
+            .add(descriptor);
       }
       return this;
     }
@@ -67,9 +72,7 @@ final class ScannedTypeCatalog {
 
     ScannedTypeCatalog build() {
       return new ScannedTypeCatalog(
-          Map.copyOf(byFqn),
-          copyListMap(bySimpleName),
-          copyListMap(byPackage));
+          Map.copyOf(byFqn), copyListMap(bySimpleName), copyListMap(byPackage));
     }
 
     private static Map<String, List<ScannedTypeDescriptor>> copyListMap(

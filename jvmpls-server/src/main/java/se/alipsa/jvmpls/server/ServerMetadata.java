@@ -6,6 +6,5 @@ final class ServerMetadata {
   static final String VERSION = "1.0.0-SNAPSHOT";
   static final String STANDALONE_JAR = NAME + "-" + VERSION + "-standalone.jar";
 
-  private ServerMetadata() {
-  }
+  private ServerMetadata() {}
 }

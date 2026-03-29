@@ -1,5 +1,12 @@
 package se.alipsa.jvmpls.build.gradle;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+
 import org.gradle.tooling.GradleConnector;
 import org.gradle.tooling.ProjectConnection;
 import org.gradle.tooling.model.build.BuildEnvironment;
@@ -7,17 +14,11 @@ import org.gradle.tooling.model.eclipse.EclipseExternalDependency;
 import org.gradle.tooling.model.eclipse.EclipseOutputLocation;
 import org.gradle.tooling.model.eclipse.EclipseProject;
 import org.gradle.tooling.model.eclipse.EclipseSourceDirectory;
+
 import se.alipsa.jvmpls.build.BuildModel;
 import se.alipsa.jvmpls.build.BuildModule;
 import se.alipsa.jvmpls.build.BuildResolutionException;
 import se.alipsa.jvmpls.build.BuildToolPlugin;
-
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
 
 public final class GradleBuildPlugin implements BuildToolPlugin {
 
@@ -45,13 +46,14 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
   @Override
   public BuildModel resolve(Path projectRoot) throws BuildResolutionException {
     Path root = projectRoot.toAbsolutePath().normalize();
-    GradleConnector connector = GradleConnector.newConnector()
-        .forProjectDirectory(root.toFile());
+    GradleConnector connector = GradleConnector.newConnector().forProjectDirectory(root.toFile());
     if (!hasWrapper(root)) {
       Path gradleHome = findLocalGradleHome();
       if (gradleHome == null) {
         throw new BuildResolutionException(
-            "Gradle project at " + root + " has no wrapper and no local Gradle installation was found");
+            "Gradle project at "
+                + root
+                + " has no wrapper and no local Gradle installation was found");
       }
       connector.useInstallation(gradleHome.toFile());
     }
@@ -67,8 +69,14 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
       LinkedHashSet<Path> watchedFiles = new LinkedHashSet<>();
       List<BuildModule> modules = new ArrayList<>();
 
-      collectProject(rootProject, sourceRoots, testSourceRoots, classpathEntries,
-          outputDirectories, watchedFiles, modules);
+      collectProject(
+          rootProject,
+          sourceRoots,
+          testSourceRoots,
+          classpathEntries,
+          outputDirectories,
+          watchedFiles,
+          modules);
 
       return new BuildModel(
           id(),
@@ -79,7 +87,8 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
           List.copyOf(outputDirectories),
           List.copyOf(modules),
           environment.getJava() == null || environment.getJava().getJavaHome() == null
-              ? null : environment.getJava().getJavaHome().toPath(),
+              ? null
+              : environment.getJava().getJavaHome().toPath(),
           watchedFiles.stream().filter(Files::exists).toList());
     } catch (RuntimeException e) {
       if (wasInterrupted(e)) {
@@ -89,13 +98,14 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
     }
   }
 
-  private static void collectProject(EclipseProject project,
-                                     LinkedHashSet<Path> sourceRoots,
-                                     LinkedHashSet<Path> testSourceRoots,
-                                     LinkedHashSet<String> classpathEntries,
-                                     LinkedHashSet<Path> outputDirectories,
-                                     LinkedHashSet<Path> watchedFiles,
-                                     List<BuildModule> modules) {
+  private static void collectProject(
+      EclipseProject project,
+      LinkedHashSet<Path> sourceRoots,
+      LinkedHashSet<Path> testSourceRoots,
+      LinkedHashSet<String> classpathEntries,
+      LinkedHashSet<Path> outputDirectories,
+      LinkedHashSet<Path> watchedFiles,
+      List<BuildModule> modules) {
     Path projectDir = project.getProjectDirectory().toPath().toAbsolutePath().normalize();
 
     LinkedHashSet<Path> moduleSourceRoots = new LinkedHashSet<>();
@@ -141,21 +151,28 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
       watchedFiles.add(projectDir.resolve("gradle/wrapper/gradle-wrapper.jar"));
     }
 
-    modules.add(new BuildModule(
-        project.getName(),
-        projectDir,
-        List.copyOf(moduleSourceRoots),
-        List.copyOf(moduleTestSourceRoots),
-        List.copyOf(moduleOutputDirectories),
-        List.copyOf(moduleClasspathEntries),
-        watchedFiles.stream()
-            .filter(path -> path.startsWith(projectDir))
-            .filter(Files::exists)
-            .toList()));
+    modules.add(
+        new BuildModule(
+            project.getName(),
+            projectDir,
+            List.copyOf(moduleSourceRoots),
+            List.copyOf(moduleTestSourceRoots),
+            List.copyOf(moduleOutputDirectories),
+            List.copyOf(moduleClasspathEntries),
+            watchedFiles.stream()
+                .filter(path -> path.startsWith(projectDir))
+                .filter(Files::exists)
+                .toList()));
 
     for (EclipseProject child : project.getChildren()) {
-      collectProject(child, sourceRoots, testSourceRoots, classpathEntries,
-          outputDirectories, watchedFiles, modules);
+      collectProject(
+          child,
+          sourceRoots,
+          testSourceRoots,
+          classpathEntries,
+          outputDirectories,
+          watchedFiles,
+          modules);
     }
   }
 
@@ -164,7 +181,9 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
       return projectDir.resolve("build/classes/java/main").normalize();
     }
     Path candidate = Path.of(path.startsWith("/") ? path.substring(1) : path);
-    return candidate.isAbsolute() ? candidate.normalize() : projectDir.resolve(candidate).normalize();
+    return candidate.isAbsolute()
+        ? candidate.normalize()
+        : projectDir.resolve(candidate).normalize();
   }
 
   private static boolean hasWrapper(Path root) {
@@ -182,7 +201,8 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
       }
     }
 
-    Path sdkman = Path.of(System.getProperty("user.home"), ".sdkman", "candidates", "gradle", "current");
+    Path sdkman =
+        Path.of(System.getProperty("user.home"), ".sdkman", "candidates", "gradle", "current");
     if (Files.isDirectory(sdkman)) {
       return sdkman;
     }
@@ -190,9 +210,8 @@ public final class GradleBuildPlugin implements BuildToolPlugin {
   }
 
   private static boolean isTestSourceDirectory(Path projectDir, Path directory) {
-    Path pathToCheck = directory.startsWith(projectDir)
-        ? projectDir.relativize(directory)
-        : directory;
+    Path pathToCheck =
+        directory.startsWith(projectDir) ? projectDir.relativize(directory) : directory;
     for (Path segment : pathToCheck) {
       if ("test".equalsIgnoreCase(segment.toString())) {
         return true;

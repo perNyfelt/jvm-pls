@@ -1,31 +1,33 @@
 package se.alipsa.jvmpls.classpath;
 
-import io.github.classgraph.ClassGraph;
-import io.github.classgraph.ClassInfo;
-import io.github.classgraph.ScanResult;
-import se.alipsa.jvmpls.core.model.SymbolInfo;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import se.alipsa.jvmpls.core.model.SymbolInfo;
+
+import io.github.classgraph.ClassGraph;
+import io.github.classgraph.ClassInfo;
+import io.github.classgraph.ScanResult;
+
 public final class ClasspathScanner {
 
   public ScannedTypeCatalog scan(List<String> classpathEntries) {
-    List<String> normalized = classpathEntries == null ? List.of() : classpathEntries.stream()
-        .filter(entry -> entry != null && !entry.isBlank())
-        .filter(entry -> Files.exists(Path.of(entry)))
-        .distinct()
-        .collect(Collectors.toList());
+    List<String> normalized =
+        classpathEntries == null
+            ? List.of()
+            : classpathEntries.stream()
+                .filter(entry -> entry != null && !entry.isBlank())
+                .filter(entry -> Files.exists(Path.of(entry)))
+                .distinct()
+                .collect(Collectors.toList());
     if (normalized.isEmpty()) {
       return ScannedTypeCatalog.builder().build();
     }
 
-    ClassGraph classGraph = new ClassGraph()
-        .enableClassInfo()
-        .ignoreClassVisibility()
-        .overrideClasspath(normalized);
+    ClassGraph classGraph =
+        new ClassGraph().enableClassInfo().ignoreClassVisibility().overrideClasspath(normalized);
 
     ScannedTypeCatalog.Builder builder = ScannedTypeCatalog.builder();
     try (ScanResult scanResult = classGraph.scan()) {
@@ -33,20 +35,20 @@ public final class ClasspathScanner {
         if (classInfo.isAnonymousInnerClass()) {
           continue;
         }
-        String resourceUri = classInfo.getResource() != null
-            ? classInfo.getResource().getURI().toString()
-            : null;
+        String resourceUri =
+            classInfo.getResource() != null ? classInfo.getResource().getURI().toString() : null;
         if (resourceUri == null) {
           continue;
         }
-        builder.add(new ScannedTypeDescriptor(
-            classInfo.getName(),
-            classInfo.getPackageName(),
-            containerFqName(classInfo.getName()),
-            kindOf(classInfo),
-            resourceUri,
-            classInfo.getSuperclass() == null ? null : classInfo.getSuperclass().getName(),
-            classInfo.getInterfaces().getNames()));
+        builder.add(
+            new ScannedTypeDescriptor(
+                classInfo.getName(),
+                classInfo.getPackageName(),
+                containerFqName(classInfo.getName()),
+                kindOf(classInfo),
+                resourceUri,
+                classInfo.getSuperclass() == null ? null : classInfo.getSuperclass().getName(),
+                classInfo.getInterfaces().getNames()));
       }
     }
     return builder.build();

@@ -1,13 +1,5 @@
 package se.alipsa.jvmpls.build.maven;
 
-import org.apache.maven.model.Dependency;
-import org.apache.maven.model.Model;
-import se.alipsa.jvmpls.build.BuildModel;
-import se.alipsa.jvmpls.build.BuildModule;
-import se.alipsa.jvmpls.build.BuildResolutionException;
-import se.alipsa.jvmpls.build.BuildToolPlugin;
-import se.alipsa.mavenutils.MavenUtils;
-
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -15,6 +7,15 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+
+import org.apache.maven.model.Dependency;
+import org.apache.maven.model.Model;
+
+import se.alipsa.jvmpls.build.BuildModel;
+import se.alipsa.jvmpls.build.BuildModule;
+import se.alipsa.jvmpls.build.BuildResolutionException;
+import se.alipsa.jvmpls.build.BuildToolPlugin;
+import se.alipsa.mavenutils.MavenUtils;
 
 public final class MavenBuildPlugin implements BuildToolPlugin {
 
@@ -56,6 +57,9 @@ public final class MavenBuildPlugin implements BuildToolPlugin {
       Path pom = entry.getKey();
       Path moduleRoot = pom.getParent();
       Model model = entry.getValue();
+      if (model == null) {
+        continue;
+      }
 
       BuildModule module = moduleFromModel(moduleRoot, model);
       reactorModules.put(reactorKey(model), module);
@@ -63,14 +67,15 @@ public final class MavenBuildPlugin implements BuildToolPlugin {
       sourceRoots.addAll(module.sourceRoots());
       testSourceRoots.addAll(module.testSourceRoots());
       outputDirectories.addAll(module.outputDirectories());
-      classpathEntries.addAll(module.outputDirectories().stream()
-          .map(Path::toString)
-          .toList());
+      classpathEntries.addAll(module.outputDirectories().stream().map(Path::toString).toList());
       watchedFiles.addAll(module.buildFiles());
     }
 
     for (Map.Entry<Path, Model> entry : modelsByPom.entrySet()) {
       Model model = entry.getValue();
+      if (model == null) {
+        continue;
+      }
       for (Dependency dependency : model.getDependencies()) {
         if (!isClasspathDependency(dependency)) {
           continue;
@@ -79,21 +84,26 @@ public final class MavenBuildPlugin implements BuildToolPlugin {
           continue;
         }
         try {
-          File artifact = maven.resolveArtifact(
-              dependency.getGroupId(),
-              dependency.getArtifactId(),
-              emptyToNull(dependency.getClassifier()),
-              dependency.getType() == null || dependency.getType().isBlank()
-                  ? "jar" : dependency.getType(),
-              dependency.getVersion());
+          File artifact =
+              maven.resolveArtifact(
+                  dependency.getGroupId(),
+                  dependency.getArtifactId(),
+                  emptyToNull(dependency.getClassifier()),
+                  dependency.getType() == null || dependency.getType().isBlank()
+                      ? "jar"
+                      : dependency.getType(),
+                  dependency.getVersion());
           if (artifact != null && artifact.exists()) {
             classpathEntries.add(artifact.getAbsolutePath());
           }
         } catch (Exception e) {
           throw new BuildResolutionException(
               "Failed to resolve Maven dependency "
-                  + dependency.getGroupId() + ":" + dependency.getArtifactId()
-                  + ":" + dependency.getVersion(),
+                  + dependency.getGroupId()
+                  + ":"
+                  + dependency.getArtifactId()
+                  + ":"
+                  + dependency.getVersion(),
               e);
         }
       }
@@ -115,9 +125,8 @@ public final class MavenBuildPlugin implements BuildToolPlugin {
         watchedFiles.stream().filter(java.nio.file.Files::exists).toList());
   }
 
-  private static void collectModuleModels(Path pomFile,
-                                          MavenUtils maven,
-                                          Map<Path, Model> modelsByPom)
+  private static void collectModuleModels(
+      Path pomFile, MavenUtils maven, Map<Path, Model> modelsByPom)
       throws BuildResolutionException {
     Path normalizedPom = pomFile.toAbsolutePath().normalize();
     if (modelsByPom.containsKey(normalizedPom)) {
@@ -137,16 +146,22 @@ public final class MavenBuildPlugin implements BuildToolPlugin {
 
   private static BuildModule moduleFromModel(Path moduleRoot, Model model) {
     org.apache.maven.model.Build build = model.getBuild();
-    Path mainSource = resolveBuildPath(moduleRoot, build == null ? null : build.getSourceDirectory(),
-        "src/main/java");
+    Path mainSource =
+        resolveBuildPath(
+            moduleRoot, build == null ? null : build.getSourceDirectory(), "src/main/java");
     Path mainGroovy = moduleRoot.resolve("src/main/groovy");
-    Path testSource = resolveBuildPath(moduleRoot, build == null ? null : build.getTestSourceDirectory(),
-        "src/test/java");
+    Path testSource =
+        resolveBuildPath(
+            moduleRoot, build == null ? null : build.getTestSourceDirectory(), "src/test/java");
     Path testGroovy = moduleRoot.resolve("src/test/groovy");
-    Path output = resolveBuildPath(moduleRoot, build == null ? null : build.getOutputDirectory(),
-        "target/classes");
-    Path testOutput = resolveBuildPath(moduleRoot, build == null ? null : build.getTestOutputDirectory(),
-        "target/test-classes");
+    Path output =
+        resolveBuildPath(
+            moduleRoot, build == null ? null : build.getOutputDirectory(), "target/classes");
+    Path testOutput =
+        resolveBuildPath(
+            moduleRoot,
+            build == null ? null : build.getTestOutputDirectory(),
+            "target/test-classes");
 
     LinkedHashSet<Path> sourceRoots = new LinkedHashSet<>();
     if (java.nio.file.Files.exists(mainSource)) {
@@ -182,17 +197,17 @@ public final class MavenBuildPlugin implements BuildToolPlugin {
         List.of(moduleRoot.resolve("pom.xml")));
   }
 
-  private static Path resolveBuildPath(Path moduleRoot, String configuredPath, String defaultRelative) {
-    String candidate = configuredPath == null || configuredPath.isBlank() ? defaultRelative : configuredPath;
+  private static Path resolveBuildPath(
+      Path moduleRoot, String configuredPath, String defaultRelative) {
+    String candidate =
+        configuredPath == null || configuredPath.isBlank() ? defaultRelative : configuredPath;
     Path path = Path.of(candidate);
     return path.isAbsolute() ? path.normalize() : moduleRoot.resolve(path).normalize();
   }
 
   private static boolean isClasspathDependency(Dependency dependency) {
     String scope = dependency.getScope();
-    return scope == null || scope.isBlank()
-        || "compile".equals(scope)
-        || "runtime".equals(scope);
+    return scope == null || scope.isBlank() || "compile".equals(scope) || "runtime".equals(scope);
   }
 
   private static String reactorKey(Model model) {

@@ -1,9 +1,9 @@
 package se.alipsa.jvmpls.core;
 
-import se.alipsa.jvmpls.core.model.*;
-
 import java.util.List;
 import java.util.Optional;
+
+import se.alipsa.jvmpls.core.model.*;
 
 /** Transport-agnostic API that both the in-proc server and the LSP adapter call. */
 public interface CoreFacade {
