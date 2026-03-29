@@ -34,8 +34,7 @@ public final class GroovyMemberResolver {
     this.scopedMembers = Objects.requireNonNull(scopedMembers, "scopedMembers");
     this.supertypes = Objects.requireNonNull(supertypes, "supertypes");
     this.dynamicMethodType = Objects.requireNonNull(dynamicMethodType, "dynamicMethodType");
-    this.dynamicPropertyType =
-        Objects.requireNonNull(dynamicPropertyType, "dynamicPropertyType");
+    this.dynamicPropertyType = Objects.requireNonNull(dynamicPropertyType, "dynamicPropertyType");
   }
 
   public List<SymbolInfo> membersAt(String fileUri, Position position, String receiverTypeFqn) {

@@ -12,6 +12,7 @@ import se.alipsa.jvmpls.core.types.MethodSignature;
 
 public interface SymbolReporter {
   Logger LOG = Logger.getLogger(SymbolReporter.class.getName());
+
   void reportPackage(String packageFqn, Location loc);
 
   void reportClass(
@@ -72,7 +73,8 @@ public interface SymbolReporter {
 
   default void reportConstructor(
       String ownerClassFqn, MethodSignature signature, Location loc, Set<String> modifiers) {
-    LOG.warning("Constructor reporting is not implemented by this SymbolReporter for " + ownerClassFqn);
+    LOG.warning(
+        "Constructor reporting is not implemented by this SymbolReporter for " + ownerClassFqn);
   }
 
   default void reportConstructor(
