@@ -425,10 +425,30 @@ class GroovyPluginCompletionsTest {
       """;
     Files.writeString(dynamicFile, dynamicCode, StandardCharsets.UTF_8);
 
+    Path relaxedFile = dir.resolve("RelaxedMain.groovy");
+    String relaxedCode = """
+      package demo
+      import groovy.transform.CompileDynamic
+      import groovy.transform.CompileStatic
+
+      @CompileStatic
+      class RelaxedMain {
+        String value = "x"
+
+        @CompileDynamic
+        void run() {
+          value.missingMethod()
+          value.missingProperty
+        }
+      }
+      """;
+    Files.writeString(relaxedFile, relaxedCode, StandardCharsets.UTF_8);
+
     try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
       List<Diagnostic> strictDiags = server.openFile(staticFile.toUri().toString(), staticCode);
       List<Diagnostic> getterDiags = server.openFile(getterFile.toUri().toString(), getterCode);
       List<Diagnostic> dynamicDiags = server.openFile(dynamicFile.toUri().toString(), dynamicCode);
+      List<Diagnostic> relaxedDiags = server.openFile(relaxedFile.toUri().toString(), relaxedCode);
 
       assertTrue(strictDiags.stream().anyMatch(diag -> "undefined-method".equals(diag.getCode())),
           "CompileStatic code should report missing methods");
@@ -437,6 +457,9 @@ class GroovyPluginCompletionsTest {
       assertTrue(dynamicDiags.stream().noneMatch(diag -> "undefined-method".equals(diag.getCode())
           || "undefined-property".equals(diag.getCode())),
           "Dynamic classes should not emit synthetic undefined-member diagnostics");
+      assertTrue(relaxedDiags.stream().noneMatch(diag -> "undefined-method".equals(diag.getCode())
+          || "undefined-property".equals(diag.getCode())),
+          "CompileDynamic regions should relax strict-static undefined-member diagnostics");
       assertTrue(getterDiags.stream().noneMatch(diag -> "undefined-property".equals(diag.getCode())),
           "Getter-backed bean properties should remain valid in strict static mode");
     }

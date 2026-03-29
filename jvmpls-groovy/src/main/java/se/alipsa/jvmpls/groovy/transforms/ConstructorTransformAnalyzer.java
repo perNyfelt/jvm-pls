@@ -2,6 +2,7 @@ package se.alipsa.jvmpls.groovy.transforms;
 
 import org.codehaus.groovy.ast.AnnotationNode;
 import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.ConstructorNode;
 import org.codehaus.groovy.ast.PropertyNode;
 import se.alipsa.jvmpls.core.model.InferenceConfidence;
 import se.alipsa.jvmpls.core.model.SyntheticOrigin;
@@ -27,6 +28,11 @@ final class ConstructorTransformAnalyzer implements TransformAnalyzer {
     if (parameterTypes.isEmpty()) {
       return List.of();
     }
+    for (ConstructorNode constructor : classNode.getDeclaredConstructors()) {
+      if (sameSignature(parameterTypes, constructor, context)) {
+        return List.of();
+      }
+    }
     return List.of(SyntheticMemberSpec.syntheticConstructor(
         context.ownerFqn(),
         new MethodSignature(parameterTypes, VoidType.INSTANCE, parameterNames, List.of(), List.of(), Set.of("public")),
@@ -34,5 +40,19 @@ final class ConstructorTransformAnalyzer implements TransformAnalyzer {
         Set.of("public"),
         SyntheticOrigin.TRANSFORM,
         InferenceConfidence.DETERMINISTIC));
+  }
+
+  private static boolean sameSignature(List<JvmType> propertyTypes,
+                                       ConstructorNode constructor,
+                                       TransformContext context) {
+    if (constructor.getParameters().length != propertyTypes.size()) {
+      return false;
+    }
+    for (int i = 0; i < constructor.getParameters().length; i++) {
+      if (!propertyTypes.get(i).equals(context.typeOf().apply(constructor.getParameters()[i].getType()))) {
+        return false;
+      }
+    }
+    return true;
   }
 }

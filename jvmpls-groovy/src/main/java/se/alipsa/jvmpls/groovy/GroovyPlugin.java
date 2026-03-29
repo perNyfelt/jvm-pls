@@ -80,6 +80,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
   private final Map<String, Set<String>> dynamicMethodTypesByUri = new ConcurrentHashMap<>();
   private final Map<String, Set<String>> dynamicPropertyTypesByUri = new ConcurrentHashMap<>();
   private final Map<String, List<Range>> strictStaticScopesByUri = new ConcurrentHashMap<>();
+  private final Map<String, List<Range>> dynamicRelaxedScopesByUri = new ConcurrentHashMap<>();
   private final TransformRegistry transformRegistry = new TransformRegistry();
   private volatile CoreQuery coreQuery;
   private volatile TypeResolver typeResolver;
@@ -104,6 +105,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     dynamicMethodTypesByUri.remove(fileUri);
     dynamicPropertyTypesByUri.remove(fileUri);
     strictStaticScopesByUri.remove(fileUri);
+    dynamicRelaxedScopesByUri.remove(fileUri);
     var diags = new ArrayList<Diagnostic>();
     var fileCtx = new FileCtx();
     hydrateCtxFromSource(fileCtx, content);
@@ -369,6 +371,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     dynamicMethodTypesByUri.remove(fileUri);
     dynamicPropertyTypesByUri.remove(fileUri);
     strictStaticScopesByUri.remove(fileUri);
+    dynamicRelaxedScopesByUri.remove(fileUri);
   }
 
   // ----- internals ------------------------------------------------------------------------------
@@ -397,16 +400,19 @@ public final class GroovyPlugin implements JvmLangPlugin {
     }
     classScopesByUri.computeIfAbsent(fileUri, ignored -> new ArrayList<>()).add(new ClassScope(fqn, toRange(cn)));
     recordStrictStaticScopes(fileUri, cn);
+    recordDynamicRelaxedScopes(fileUri, cn);
 
     // Methods
     for (MethodNode mn : cn.getMethods()) {
       if (mn.getDeclaringClass() != cn) continue;
       recordStrictStaticScope(fileUri, mn);
+      recordDynamicRelaxedScope(fileUri, mn);
       reporter.reportMethod(fqn, mn.getName(), methodSig(mn, ctx), new Location(fileUri, toRange(mn)),
           modifiers(mn.getModifiers()));
     }
     for (ConstructorNode constructor : cn.getDeclaredConstructors()) {
       if (constructor.getDeclaringClass() != cn) continue;
+      recordDynamicRelaxedScope(fileUri, constructor);
       reporter.reportConstructor(fqn, constructorSig(constructor, ctx),
           new Location(fileUri, toRange(constructor)),
           modifiers(constructor.getModifiers()));
@@ -730,7 +736,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
   private void reportMixinAnnotations(String fileUri, ClassNode classNode, String ownerFqn,
                                       SymbolReporter reporter, FileCtx ctx, CoreQuery core) {
     for (AnnotationNode annotation : classNode.getAnnotations()) {
-      if (!matchesAnnotation(annotation, "groovy.lang.Mixin")) {
+      if (!matchesAnnotation(annotation, GroovyAnnotations.MIXIN)) {
         continue;
       }
       Expression value = annotation.getMember("value");
@@ -909,14 +915,36 @@ public final class GroovyPlugin implements JvmLangPlugin {
     recordStrictStaticScope(fileUri, classNode);
   }
 
+  private void recordDynamicRelaxedScopes(String fileUri, ClassNode classNode) {
+    recordDynamicRelaxedScope(fileUri, classNode);
+  }
+
   private void recordStrictStaticScope(String fileUri, ASTNode node) {
     if (node instanceof AnnotatedNode annotatedNode && hasStrictStaticAnnotation(annotatedNode)) {
       strictStaticScopesByUri.computeIfAbsent(fileUri, ignored -> new ArrayList<>()).add(toRange(node));
     }
   }
 
+  private void recordDynamicRelaxedScope(String fileUri, ASTNode node) {
+    if (node instanceof AnnotatedNode annotatedNode && hasDynamicRelaxationAnnotation(annotatedNode)) {
+      dynamicRelaxedScopesByUri.computeIfAbsent(fileUri, ignored -> new ArrayList<>()).add(toRange(node));
+    }
+  }
+
   private boolean isStrictStaticAt(String fileUri, Position position) {
+    if (isDynamicRelaxedAt(fileUri, position)) {
+      return false;
+    }
     for (Range range : strictStaticScopesByUri.getOrDefault(fileUri, List.of())) {
+      if (contains(range, position)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private boolean isDynamicRelaxedAt(String fileUri, Position position) {
+    for (Range range : dynamicRelaxedScopesByUri.getOrDefault(fileUri, List.of())) {
       if (contains(range, position)) {
         return true;
       }
@@ -936,8 +964,27 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private static boolean hasStrictStaticAnnotation(AnnotatedNode annotatedNode) {
     return annotatedNode.getAnnotations().stream()
-        .anyMatch(annotation -> matchesAnnotation(annotation, "groovy.transform.CompileStatic")
-            || matchesAnnotation(annotation, "groovy.transform.TypeChecked"));
+        .anyMatch(annotation -> matchesAnnotation(annotation, GroovyAnnotations.COMPILE_STATIC)
+            || matchesAnnotation(annotation, GroovyAnnotations.TYPE_CHECKED));
+  }
+
+  private static boolean hasDynamicRelaxationAnnotation(AnnotatedNode annotatedNode) {
+    return annotatedNode.getAnnotations().stream().anyMatch(annotation ->
+        matchesAnnotation(annotation, GroovyAnnotations.COMPILE_DYNAMIC)
+            || hasSkippedTypeChecking(annotation));
+  }
+
+  private static boolean hasSkippedTypeChecking(AnnotationNode annotation) {
+    if (!matchesAnnotation(annotation, GroovyAnnotations.COMPILE_STATIC)
+        && !matchesAnnotation(annotation, GroovyAnnotations.TYPE_CHECKED)) {
+      return false;
+    }
+    Expression value = annotation.getMember("value");
+    if (value == null) {
+      return false;
+    }
+    String text = value.getText();
+    return "SKIP".equals(text) || text.endsWith(".SKIP");
   }
 
   private MetaClassTarget metaClassTarget(Expression expression) {
@@ -974,6 +1021,9 @@ public final class GroovyPlugin implements JvmLangPlugin {
   }
 
   private static boolean matchesAnnotation(AnnotationNode annotation, String fqName) {
+    if (annotation == null || annotation.getClassNode() == null) {
+      return false;
+    }
     String annotationName = annotation.getClassNode().getName();
     return fqName.equals(annotationName) || fqName.endsWith("." + annotation.getClassNode().getNameWithoutPackage());
   }
