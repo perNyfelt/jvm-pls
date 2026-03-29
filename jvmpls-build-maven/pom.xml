@@ -17,7 +17,7 @@
     </dependency>
     <dependency>
       <groupId>se.alipsa</groupId>
-      <artifactId>maven-3.9.11-utils</artifactId>
+      <artifactId>maven-utils</artifactId>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
