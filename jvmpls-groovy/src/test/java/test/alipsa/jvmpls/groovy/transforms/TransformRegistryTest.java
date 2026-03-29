@@ -2,6 +2,7 @@ package test.alipsa.jvmpls.groovy.transforms;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -157,6 +158,40 @@ class TransformRegistryTest {
 
     assertThrows(NullPointerException.class, () -> registry.analyzeClass(null, context));
     assertThrows(NullPointerException.class, () -> registry.analyzeClass(classNode, null));
+  }
+
+  @Test
+  void builder_and_log_transforms_emit_expected_synthetic_members() {
+    TransformRegistry registry = new TransformRegistry();
+    ClassNode classNode =
+        parsePrimaryClass(
+            """
+            @groovy.transform.builder.Builder
+            @groovy.util.logging.Log
+            class Person {
+              String name
+            }
+            """);
+
+    List<SyntheticMemberSpec> specs =
+        registry.analyzeClass(
+            classNode, contextFor("file:///Person.groovy", "Person", emptyCore()));
+
+    assertTrue(
+        specs.stream()
+            .anyMatch(
+                spec ->
+                    spec.kind() == SymbolInfo.Kind.CLASS
+                        && "PersonBuilder".equals(spec.ownerFqn())));
+    assertTrue(
+        specs.stream()
+            .anyMatch(
+                spec ->
+                    spec.kind() == SymbolInfo.Kind.METHOD && "builder".equals(spec.memberName())));
+    assertTrue(
+        specs.stream()
+            .anyMatch(
+                spec -> spec.kind() == SymbolInfo.Kind.FIELD && "log".equals(spec.memberName())));
   }
 
   private static TransformContext contextFor(String fileUri, String ownerFqn, CoreQuery core) {

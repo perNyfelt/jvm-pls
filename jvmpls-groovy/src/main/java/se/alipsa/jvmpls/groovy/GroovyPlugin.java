@@ -77,6 +77,8 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private record ClassScope(String ownerFqn, Range range) {}
 
+  // Per-file state is replaced/cleared atomically after each index/forget pass.
+  // Core may index different files concurrently, but each file is analyzed on one thread at a time.
   private final Map<String, FileCtx> ctxByUri = new ConcurrentHashMap<>();
   private final Map<String, String> contentByUri = new ConcurrentHashMap<>();
   private final Map<String, List<String>> directSupertypesByType = new ConcurrentHashMap<>();

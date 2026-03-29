@@ -140,6 +140,61 @@ class GroovyPluginDefinitionTest {
     }
   }
 
+  @Test
+  void definition_resolves_transform_generated_members() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-groovy-transform-def");
+
+    Path main = dir.resolve("Main.groovy");
+    String mainCode =
+        """
+        package demo
+        import groovy.transform.builder.Builder
+        import groovy.util.logging.Log
+        import groovy.lang.Delegate
+
+        class Worker {
+          String hello() { "hi" }
+        }
+
+        @Builder
+        class Person {
+          String name
+        }
+
+        @Log
+        class Main {
+          @Delegate Worker worker = new Worker()
+          PersonBuilder builder = Person.builder()
+
+          void run() {
+            builder.name("x")
+            this.hello()
+            log.info("msg")
+          }
+        }
+        """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      Optional<Location> builderDef =
+          server.definition(mainUri, nthOccurrencePosition(mainCode, "name", 2));
+      Optional<Location> delegateDef =
+          server.definition(mainUri, nthOccurrencePosition(mainCode, "hello", 2));
+      Optional<Location> logDef =
+          server.definition(mainUri, nthOccurrencePosition(mainCode, "log", 2));
+
+      assertTrue(builderDef.isPresent(), "@Builder member definition should resolve");
+      assertEquals(mainUri, builderDef.get().getUri());
+      assertTrue(delegateDef.isPresent(), "@Delegate member definition should resolve");
+      assertEquals(mainUri, delegateDef.get().getUri());
+      assertTrue(logDef.isPresent(), "@Log field definition should resolve");
+      assertEquals(mainUri, logDef.get().getUri());
+    }
+  }
+
   private static Position firstOccurrencePosition(String text, String needle) {
     int idx = text.indexOf(needle);
     assertTrue(idx >= 0, "needle not found");
