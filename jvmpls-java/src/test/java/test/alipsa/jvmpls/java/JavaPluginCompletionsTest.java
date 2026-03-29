@@ -237,6 +237,47 @@ class JavaPluginCompletionsTest {
     }
   }
 
+  @Test
+  void shows_protected_members_to_cross_package_subclasses() throws Exception {
+    Path sourceDir = Files.createTempDirectory("jvmpls-java-complete7-src");
+    Path outputDir = Files.createTempDirectory("jvmpls-java-complete7-out");
+    compileJavaSource(sourceDir, outputDir, "demo.Base", """
+        package demo;
+        public class Base {
+          protected void protectedMethod() {}
+        }
+        """);
+    compileJavaSource(sourceDir, outputDir, "other.Sub", """
+        package other;
+        import demo.Base;
+        public class Sub extends Base {}
+        """);
+
+    Path main = sourceDir.resolve("other/Consumer.java");
+    Files.createDirectories(main.getParent());
+    String mainCode = """
+      package other;
+      class Consumer extends Sub {
+        Sub sibling;
+        void m() {
+          sibling.pro/*caret*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {},
+        List.of(outputDir.toString()),
+        Path.of(System.getProperty("java.home")))) {
+      server.openFile(mainUri, mainCode);
+
+      List<CompletionItem> items = server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/"));
+      assertTrue(containsLabel(items, "protectedMethod"),
+          "Protected members should remain visible from cross-package subclasses");
+    }
+  }
+
 
   // ---------- helpers ----------
 
@@ -282,6 +323,7 @@ class JavaPluginCompletionsTest {
     Files.createDirectories(sourceFile.getParent());
     Files.writeString(sourceFile, source, StandardCharsets.UTF_8);
     int result = compiler.run(null, null, null,
+        "-classpath", outputDir.toString(),
         "-d", outputDir.toString(),
         sourceFile.toString());
     assertEquals(0, result, "compilation should succeed");

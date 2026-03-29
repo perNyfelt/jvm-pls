@@ -28,6 +28,8 @@ public final class JavaPlugin implements JvmLangPlugin {
 
   private static final JavaCompiler COMPILER = ToolProvider.getSystemJavaCompiler();
   private final Map<String,String> contentByUri = new ConcurrentHashMap<>();
+  private final Map<String, List<String>> directSupertypesByType = new ConcurrentHashMap<>();
+  private final Map<String, Set<String>> typesByUri = new ConcurrentHashMap<>();
   private volatile TypeResolver typeResolver;
 
   private static final java.util.regex.Pattern PKG =
@@ -51,6 +53,7 @@ public final class JavaPlugin implements JvmLangPlugin {
   @Override
   public List<Diagnostic> index(String fileUri, String content, SymbolReporter reporter) {
     contentByUri.put(fileUri, content);
+    clearHierarchy(fileUri);
     var out = new ArrayList<Diagnostic>();
 
     try (var fm = COMPILER.getStandardFileManager(null, null, null)) {
@@ -86,6 +89,7 @@ public final class JavaPlugin implements JvmLangPlugin {
               boolean isAnno      = node.getKind() == Tree.Kind.ANNOTATION_TYPE;
 
               reporter.reportClass(fqn, new Location(fileUri, toRange(cu, node, trees)), isInterface, isEnum, isAnno);
+              recordTypeHierarchy(fileUri, fqn, node, pkg, visibleImports);
 
               // descend with this owner and restore afterwards (handles nested types)
               String prev = owner;
@@ -193,7 +197,10 @@ public final class JavaPlugin implements JvmLangPlugin {
     return null;
   }
 
-  @Override public void forget(String fileUri) { contentByUri.remove(fileUri); }
+  @Override public void forget(String fileUri) {
+    contentByUri.remove(fileUri);
+    clearHierarchy(fileUri);
+  }
 
   @Override
   public List<CompletionItem> completions(String fileUri, Position position, CoreQuery core) {
@@ -299,8 +306,8 @@ public final class JavaPlugin implements JvmLangPlugin {
     };
   }
 
-  private static void collectMembersFromReceiver(CoreQuery core, String receiver, String memberPrefix,
-                                                 String content, java.util.Map<String, CompletionItem> out) {
+  private void collectMembersFromReceiver(CoreQuery core, String receiver, String memberPrefix,
+                                          String content, java.util.Map<String, CompletionItem> out) {
     String ownerClass = primaryClassFqn(content);
     if (ownerClass == null) {
       return;
@@ -316,7 +323,7 @@ public final class JavaPlugin implements JvmLangPlugin {
       if (resolvedType instanceof ClassType classType) {
         for (SymbolInfo member : core.membersOf(classType.fqName())) {
           String name = memberName(member);
-          if (name.startsWith(memberPrefix) && isVisible(member, ownerClass)) {
+          if (name.startsWith(memberPrefix) && isVisible(member, ownerClass, core)) {
             addMember(out, member, name);
           }
         }
@@ -497,7 +504,7 @@ public final class JavaPlugin implements JvmLangPlugin {
     return (pkg == null || pkg.isBlank()) ? simple : pkg + "." + simple;
   }
 
-  private static boolean isVisible(SymbolInfo member, String currentOwner) {
+  private boolean isVisible(SymbolInfo member, String currentOwner, CoreQuery core) {
     Set<String> modifiers = member.getModifiers();
     if (member.getContainerFqName().equals(currentOwner)) {
       return true;
@@ -513,10 +520,63 @@ public final class JavaPlugin implements JvmLangPlugin {
     }
     String currentPackage = packageName(currentOwner);
     String ownerPackage = packageName(member.getContainerFqName());
-    if (modifiers.contains("protected") || modifiers.contains("package-private")) {
+    if (modifiers.contains("package-private")) {
       return Objects.equals(currentPackage, ownerPackage);
     }
+    if (modifiers.contains("protected")) {
+      return Objects.equals(currentPackage, ownerPackage)
+          || isSubtypeOf(currentOwner, member.getContainerFqName(), core, new LinkedHashSet<>());
+    }
     return false;
+  }
+
+  private boolean isSubtypeOf(String currentType, String targetType, CoreQuery core, Set<String> visited) {
+    if (currentType == null || currentType.isBlank() || !visited.add(currentType)) {
+      return false;
+    }
+    for (String supertype : directSupertypesOf(currentType, core)) {
+      if (targetType.equals(supertype) || isSubtypeOf(supertype, targetType, core, visited)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private List<String> directSupertypesOf(String typeFqn, CoreQuery core) {
+    List<String> local = directSupertypesByType.get(typeFqn);
+    if (local != null && !local.isEmpty()) {
+      return local;
+    }
+    return core == null ? List.of() : core.supertypesOf(typeFqn);
+  }
+
+  private void recordTypeHierarchy(String fileUri, String typeFqn, ClassTree node, String pkg, List<String> visibleImports) {
+    ArrayList<String> supertypes = new ArrayList<>();
+    Tree extendsClause = node.getExtendsClause();
+    if (extendsClause != null) {
+      JvmType extendsType = resolveType(extendsClause.toString(), pkg, visibleImports);
+      if (extendsType instanceof ClassType classType) {
+        supertypes.add(classType.fqName());
+      }
+    }
+    for (Tree implemented : node.getImplementsClause()) {
+      JvmType interfaceType = resolveType(implemented.toString(), pkg, visibleImports);
+      if (interfaceType instanceof ClassType classType) {
+        supertypes.add(classType.fqName());
+      }
+    }
+    directSupertypesByType.put(typeFqn, List.copyOf(new LinkedHashSet<>(supertypes)));
+    typesByUri.computeIfAbsent(fileUri, ignored -> ConcurrentHashMap.newKeySet()).add(typeFqn);
+  }
+
+  private void clearHierarchy(String fileUri) {
+    Set<String> types = typesByUri.remove(fileUri);
+    if (types == null) {
+      return;
+    }
+    for (String type : types) {
+      directSupertypesByType.remove(type);
+    }
   }
 
   private static String packageName(String fqn) {

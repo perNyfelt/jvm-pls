@@ -13,4 +13,5 @@ public interface SymbolProvider {
   List<SymbolInfo> findBySimpleName(String simpleName);
   List<SymbolInfo> allInPackage(String pkgFqn);
   default List<SymbolInfo> membersOf(String ownerFqn) { return List.of(); }
+  default List<String> supertypesOf(String typeFqn) { return List.of(); }
 }

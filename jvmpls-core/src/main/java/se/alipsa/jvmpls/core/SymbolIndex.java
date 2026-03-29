@@ -17,6 +17,7 @@ public final class SymbolIndex implements CoreQuery {
   private final Map<String, List<SymbolInfo>> providerBySimpleNameCache = new ConcurrentHashMap<>();
   private final Map<String, List<SymbolInfo>> providerByPackageCache = new ConcurrentHashMap<>();
   private final Map<String, List<SymbolInfo>> providerByOwnerCache = new ConcurrentHashMap<>();
+  private final Map<String, List<String>> providerByTypeHierarchyCache = new ConcurrentHashMap<>();
 
   public void put(String fileUri, SymbolInfo sym) {
     byFqn.put(sym.getFqName(), sym);
@@ -31,6 +32,7 @@ public final class SymbolIndex implements CoreQuery {
     providerBySimpleNameCache.clear();
     providerByPackageCache.clear();
     providerByOwnerCache.clear();
+    providerByTypeHierarchyCache.clear();
   }
 
   public void removeFile(String fileUri) {
@@ -106,6 +108,14 @@ public final class SymbolIndex implements CoreQuery {
     return List.copyOf(results.values());
   }
 
+  @Override
+  public List<String> supertypesOf(String typeFqn) {
+    if (typeFqn == null || typeFqn.isBlank()) {
+      return List.of();
+    }
+    return providerByTypeHierarchyCache.computeIfAbsent(typeFqn, this::resolveExternalSupertypes);
+  }
+
   private Optional<SymbolInfo> resolveExternalByFqn(String fqn) {
     synchronized (providers) {
       for (SymbolProvider provider : providers) {
@@ -156,6 +166,20 @@ public final class SymbolIndex implements CoreQuery {
       }
     }
     return List.copyOf(results.values());
+  }
+
+  private List<String> resolveExternalSupertypes(String typeFqn) {
+    LinkedHashSet<String> results = new LinkedHashSet<>();
+    synchronized (providers) {
+      for (SymbolProvider provider : providers) {
+        try {
+          results.addAll(provider.supertypesOf(typeFqn));
+        } catch (RuntimeException e) {
+          LOG.log(Level.WARNING, "Symbol provider failed while resolving supertypes for " + typeFqn, e);
+        }
+      }
+    }
+    return List.copyOf(results);
   }
 
   private static String simpleNameOf(SymbolInfo symbol) {

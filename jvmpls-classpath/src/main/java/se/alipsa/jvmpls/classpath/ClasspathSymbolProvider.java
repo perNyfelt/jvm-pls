@@ -56,6 +56,20 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
     return materializedMembers.computeIfAbsent(ownerFqn, this::materializeMembers);
   }
 
+  @Override
+  public List<String> supertypesOf(String typeFqn) {
+    return catalog.findByFqn(typeFqn)
+        .map(descriptor -> {
+          LinkedHashSet<String> supertypes = new LinkedHashSet<>();
+          if (descriptor.superclassFqName() != null && !descriptor.superclassFqName().isBlank()) {
+            supertypes.add(descriptor.superclassFqName());
+          }
+          supertypes.addAll(descriptor.interfaceFqNames());
+          return List.copyOf(supertypes);
+        })
+        .orElseGet(List::of);
+  }
+
   private SymbolInfo materialize(ScannedTypeDescriptor descriptor) {
     return materialized.computeIfAbsent(descriptor.fqName(), ignored -> {
       BinaryTypeDetails details = reader.read(descriptor.resourceUri());

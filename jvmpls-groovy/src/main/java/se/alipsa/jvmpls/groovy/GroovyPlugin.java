@@ -55,6 +55,8 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private final Map<String, FileCtx> ctxByUri = new ConcurrentHashMap<>();
   private final Map<String, String>  contentByUri = new ConcurrentHashMap<>();
+  private final Map<String, List<String>> directSupertypesByType = new ConcurrentHashMap<>();
+  private final Map<String, Set<String>> typesByUri = new ConcurrentHashMap<>();
   private volatile TypeResolver typeResolver;
 
   // Groovy default star imports (visibility without explicit imports)
@@ -70,6 +72,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
   @Override
   public List<Diagnostic> index(String fileUri, String content, SymbolReporter reporter) {
     contentByUri.put(fileUri, content);
+    clearHierarchy(fileUri);
     var diags = new ArrayList<Diagnostic>();
     var fileCtx = new FileCtx();
     hydrateCtxFromSource(fileCtx, content);
@@ -301,6 +304,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
   @Override public void forget(String fileUri) {
     ctxByUri.remove(fileUri);
     contentByUri.remove(fileUri);
+    clearHierarchy(fileUri);
   }
 
   // ----- internals ------------------------------------------------------------------------------
@@ -323,6 +327,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     boolean isAnno      = cn.isAnnotationDefinition();
 
     reporter.reportClass(fqn, new Location(fileUri, toRange(cn)), isInterface, isEnum, isAnno);
+    recordTypeHierarchy(fileUri, fqn, cn, ctx);
     if (ctx.primaryClassFqn.isBlank()) {
       ctx.primaryClassFqn = fqn;
     }
@@ -605,9 +610,9 @@ public final class GroovyPlugin implements JvmLangPlugin {
     }
   }
 
-  private static void collectMembersFromReceiver(CoreQuery core, String receiver, String memberPrefix,
-                                                 String currentOwnerFqn,
-                                                 java.util.Map<String, CompletionItem> out) {
+  private void collectMembersFromReceiver(CoreQuery core, String receiver, String memberPrefix,
+                                          String currentOwnerFqn,
+                                          java.util.Map<String, CompletionItem> out) {
     if (currentOwnerFqn == null || currentOwnerFqn.isBlank()) {
       return;
     }
@@ -621,7 +626,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
       if (symbol.getResolvedType() instanceof ClassType classType) {
         for (SymbolInfo member : core.membersOf(classType.fqName())) {
           String name = memberName(member);
-          if (name.startsWith(memberPrefix) && isVisible(member, currentOwnerFqn)) {
+          if (name.startsWith(memberPrefix) && isVisible(member, currentOwnerFqn, core)) {
             addMember(out, member, name);
           }
         }
@@ -688,7 +693,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     return Set.copyOf(out);
   }
 
-  private static boolean isVisible(SymbolInfo member, String currentOwnerFqn) {
+  private boolean isVisible(SymbolInfo member, String currentOwnerFqn, CoreQuery core) {
     Set<String> modifiers = member.getModifiers();
     if (member.getContainerFqName().equals(currentOwnerFqn)) {
       return true;
@@ -704,10 +709,63 @@ public final class GroovyPlugin implements JvmLangPlugin {
     }
     String currentPackage = ownerPkg(currentOwnerFqn);
     String ownerPackage = ownerPkg(member.getContainerFqName());
-    if (modifiers.contains("protected") || modifiers.contains("package-private")) {
+    if (modifiers.contains("package-private")) {
       return Objects.equals(currentPackage, ownerPackage);
     }
+    if (modifiers.contains("protected")) {
+      return Objects.equals(currentPackage, ownerPackage)
+          || isSubtypeOf(currentOwnerFqn, member.getContainerFqName(), core, new LinkedHashSet<>());
+    }
     return false;
+  }
+
+  private boolean isSubtypeOf(String currentType, String targetType, CoreQuery core, Set<String> visited) {
+    if (currentType == null || currentType.isBlank() || !visited.add(currentType)) {
+      return false;
+    }
+    for (String supertype : directSupertypesOf(currentType, core)) {
+      if (targetType.equals(supertype) || isSubtypeOf(supertype, targetType, core, visited)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private List<String> directSupertypesOf(String typeFqn, CoreQuery core) {
+    List<String> local = directSupertypesByType.get(typeFqn);
+    if (local != null && !local.isEmpty()) {
+      return local;
+    }
+    return core == null ? List.of() : core.supertypesOf(typeFqn);
+  }
+
+  private void recordTypeHierarchy(String fileUri, String typeFqn, ClassNode classNode, FileCtx ctx) {
+    ArrayList<String> supertypes = new ArrayList<>();
+    ClassNode superClass = classNode.getSuperClass();
+    if (superClass != null && !"java.lang.Object".equals(superClass.getName())) {
+      JvmType extendsType = typeOf(superClass, ctx);
+      if (extendsType instanceof ClassType classType) {
+        supertypes.add(classType.fqName());
+      }
+    }
+    for (ClassNode interfaceNode : classNode.getInterfaces()) {
+      JvmType interfaceType = typeOf(interfaceNode, ctx);
+      if (interfaceType instanceof ClassType classType) {
+        supertypes.add(classType.fqName());
+      }
+    }
+    directSupertypesByType.put(typeFqn, List.copyOf(new LinkedHashSet<>(supertypes)));
+    typesByUri.computeIfAbsent(fileUri, ignored -> ConcurrentHashMap.newKeySet()).add(typeFqn);
+  }
+
+  private void clearHierarchy(String fileUri) {
+    Set<String> types = typesByUri.remove(fileUri);
+    if (types == null) {
+      return;
+    }
+    for (String type : types) {
+      directSupertypesByType.remove(type);
+    }
   }
 
   private static String memberCompletionKey(SymbolInfo symbol, String label) {
