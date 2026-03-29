@@ -1,5 +1,6 @@
 package se.alipsa.jvmpls.groovy.transforms;
 
+import java.util.Objects;
 import java.util.function.Function;
 
 import org.codehaus.groovy.ast.ASTNode;
@@ -15,6 +16,14 @@ public record TransformContext(
     CoreQuery core,
     Function<ClassNode, JvmType> typeOf,
     Function<ASTNode, Location> locationOf) {
+
+  public TransformContext {
+    Objects.requireNonNull(fileUri, "fileUri");
+    Objects.requireNonNull(ownerFqn, "ownerFqn");
+    Objects.requireNonNull(core, "core");
+    Objects.requireNonNull(typeOf, "typeOf");
+    Objects.requireNonNull(locationOf, "locationOf");
+  }
 
   public String packageName() {
     int lastDot = ownerFqn.lastIndexOf('.');

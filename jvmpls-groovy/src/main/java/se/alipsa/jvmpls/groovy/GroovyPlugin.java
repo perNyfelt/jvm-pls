@@ -3,6 +3,8 @@ package se.alipsa.jvmpls.groovy;
 import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 import org.codehaus.groovy.ast.*;
@@ -45,6 +47,7 @@ import se.alipsa.jvmpls.groovy.transforms.TransformContext;
 import se.alipsa.jvmpls.groovy.transforms.TransformRegistry;
 
 public final class GroovyPlugin implements JvmLangPlugin {
+  private static final Logger LOG = Logger.getLogger(GroovyPlugin.class.getName());
 
   @Override
   public String id() {
@@ -85,6 +88,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
   private final Map<String, Set<String>> dynamicPropertyTypesByUri = new ConcurrentHashMap<>();
   private final Map<String, List<Range>> strictStaticScopesByUri = new ConcurrentHashMap<>();
   private final Map<String, List<Range>> dynamicRelaxedScopesByUri = new ConcurrentHashMap<>();
+  private final Set<String> missingCoreWarnings = ConcurrentHashMap.newKeySet();
   private final TransformRegistry transformRegistry = new TransformRegistry();
   private volatile CoreQuery coreQuery;
   private volatile TypeResolver typeResolver;
@@ -97,6 +101,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
   public void configure(PluginEnvironment env) {
     coreQuery = env.core();
     typeResolver = new TypeResolver(env.core());
+    missingCoreWarnings.clear();
   }
 
   @Override
@@ -160,11 +165,12 @@ public final class GroovyPlugin implements JvmLangPlugin {
                   "error"));
         }
       }
-    } catch (Throwable t) {
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Failed to index Groovy file " + fileUri, e);
       diags.add(
           new Diagnostic(
               new Range(new Position(0, 0), new Position(0, 1)),
-              "Parse error: " + t.getMessage(),
+              "Parse error: " + e.getMessage(),
               Diagnostic.Severity.ERROR,
               id(),
               "parse"));
@@ -407,6 +413,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     dynamicPropertyTypesByUri.remove(fileUri);
     strictStaticScopesByUri.remove(fileUri);
     dynamicRelaxedScopesByUri.remove(fileUri);
+    missingCoreWarnings.remove(fileUri);
   }
 
   // ----- internals ------------------------------------------------------------------------------
@@ -565,29 +572,16 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private void applyTransforms(
       String fileUri, ClassNode classNode, SymbolReporter reporter, FileCtx ctx) {
+    if (coreQuery == null) {
+      warnMissingCore(fileUri, "transform analysis");
+      return;
+    }
     String ownerFqn = ownerFqn(classNode, ctx);
     TransformContext transformContext =
         new TransformContext(
             fileUri,
             ownerFqn,
-            coreQuery == null
-                ? new CoreQuery() {
-                  @Override
-                  public Optional<SymbolInfo> findByFqn(String fqn) {
-                    return Optional.empty();
-                  }
-
-                  @Override
-                  public List<SymbolInfo> findBySimpleName(String simpleName) {
-                    return List.of();
-                  }
-
-                  @Override
-                  public List<SymbolInfo> allInPackage(String pkgFqn) {
-                    return List.of();
-                  }
-                }
-                : coreQuery,
+            coreQuery,
             type -> typeOf(type, ctx),
             node -> new Location(fileUri, toRange(node)));
     for (SyntheticMemberSpec spec : transformRegistry.analyzeClass(classNode, transformContext)) {
@@ -660,6 +654,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
       FileCtx ctx) {
     CoreQuery core = coreQuery;
     if (core == null) {
+      warnMissingCore(fileUri, "dynamic feature analysis");
       return;
     }
     ArrayList<ScopedSyntheticMember> scoped = new ArrayList<>();
@@ -939,6 +934,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     }
     CoreQuery core = coreQuery;
     if (core == null) {
+      warnMissingCore(fileUri, "semantic diagnostics");
       return;
     }
     GroovyMemberResolver resolver = memberResolver(core);
@@ -1238,6 +1234,16 @@ public final class GroovyPlugin implements JvmLangPlugin {
     String annotationName = annotation.getClassNode().getName();
     return fqName.equals(annotationName)
         || fqName.endsWith("." + annotation.getClassNode().getNameWithoutPackage());
+  }
+
+  private void warnMissingCore(String fileUri, String feature) {
+    if (missingCoreWarnings.add(fileUri)) {
+      LOG.warning(
+          "Groovy plugin is not configured with CoreQuery; "
+              + feature
+              + " is disabled for "
+              + fileUri);
+    }
   }
 
   private static List<String> classNames(Expression expression) {

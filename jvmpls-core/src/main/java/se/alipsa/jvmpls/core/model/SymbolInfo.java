@@ -1,6 +1,7 @@
 package se.alipsa.jvmpls.core.model;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import se.alipsa.jvmpls.core.types.JvmType;
@@ -94,12 +95,12 @@ public final class SymbolInfo {
       MethodSignature methodSignature,
       SyntheticOrigin syntheticOrigin,
       InferenceConfidence inferenceConfidence) {
-    this.languageId = languageId;
-    this.kind = kind;
-    this.fqName = fqName;
-    this.containerFqName = containerFqName;
+    this.languageId = Objects.requireNonNull(languageId, "languageId");
+    this.kind = Objects.requireNonNull(kind, "kind");
+    this.fqName = Objects.requireNonNull(fqName, "fqName");
+    this.containerFqName = containerFqName == null ? "" : containerFqName;
     this.location = location;
-    this.signature = signature;
+    this.signature = signature == null ? "" : signature;
     this.modifiers = modifiers == null ? Set.of() : Set.copyOf(modifiers);
     this.typeParameters = typeParameters == null ? List.of() : List.copyOf(typeParameters);
     this.resolvedType = resolvedType;

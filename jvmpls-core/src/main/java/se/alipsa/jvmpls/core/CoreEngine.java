@@ -60,7 +60,8 @@ public final class CoreEngine implements CoreFacade {
     if (pl != null) {
       try {
         pl.forget(uri);
-      } catch (Throwable ignored) {
+      } catch (Exception e) {
+        LOG.log(Level.WARNING, "Failed to forget plugin state for " + uri, e);
       }
     }
   }
@@ -78,8 +79,8 @@ public final class CoreEngine implements CoreFacade {
     if (pl == null) return List.of();
     try {
       return pl.completions(uri, position, index);
-    } catch (Throwable t) {
-      LOG.log(Level.SEVERE, "Completion request failed for " + uri, t);
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Completion request failed for " + uri, e);
       return List.of();
     }
   }
@@ -96,8 +97,8 @@ public final class CoreEngine implements CoreFacade {
     try {
       SymbolInfo sym = pl.resolveSymbol(uri, token, position, index);
       return sym == null ? Optional.empty() : Optional.ofNullable(sym.getLocation());
-    } catch (Throwable t) {
-      LOG.log(Level.SEVERE, "Definition request failed for " + uri, t);
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Definition request failed for " + uri, e);
       return Optional.empty();
     }
   }
@@ -125,12 +126,13 @@ public final class CoreEngine implements CoreFacade {
     List<Diagnostic> diags;
     try {
       diags = plugin.index(uri, text, reporter);
-    } catch (Throwable t) {
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Plugin indexing failed for " + uri + " using " + plugin.id(), e);
       diags =
           List.of(
               new Diagnostic(
                   new Range(new Position(0, 0), new Position(0, 1)),
-                  "Plugin error: " + t.getMessage(),
+                  "Plugin error: " + e.getMessage(),
                   Diagnostic.Severity.ERROR,
                   plugin.id(),
                   "plugin-exception"));

@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
@@ -29,11 +30,12 @@ public final class GroovyMemberResolver {
       java.util.function.Function<String, List<String>> supertypes,
       Predicate<String> dynamicMethodType,
       Predicate<String> dynamicPropertyType) {
-    this.core = core;
-    this.scopedMembers = scopedMembers;
-    this.supertypes = supertypes;
-    this.dynamicMethodType = dynamicMethodType;
-    this.dynamicPropertyType = dynamicPropertyType;
+    this.core = Objects.requireNonNull(core, "core");
+    this.scopedMembers = Objects.requireNonNull(scopedMembers, "scopedMembers");
+    this.supertypes = Objects.requireNonNull(supertypes, "supertypes");
+    this.dynamicMethodType = Objects.requireNonNull(dynamicMethodType, "dynamicMethodType");
+    this.dynamicPropertyType =
+        Objects.requireNonNull(dynamicPropertyType, "dynamicPropertyType");
   }
 
   public List<SymbolInfo> membersAt(String fileUri, Position position, String receiverTypeFqn) {

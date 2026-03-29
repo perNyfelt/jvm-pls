@@ -1,6 +1,7 @@
 package se.alipsa.jvmpls.core;
 
 import java.util.Set;
+import java.util.logging.Logger;
 
 import se.alipsa.jvmpls.core.model.InferenceConfidence;
 import se.alipsa.jvmpls.core.model.Location;
@@ -10,6 +11,7 @@ import se.alipsa.jvmpls.core.types.JvmTypes;
 import se.alipsa.jvmpls.core.types.MethodSignature;
 
 public interface SymbolReporter {
+  Logger LOG = Logger.getLogger(SymbolReporter.class.getName());
   void reportPackage(String packageFqn, Location loc);
 
   void reportClass(
@@ -69,7 +71,9 @@ public interface SymbolReporter {
   }
 
   default void reportConstructor(
-      String ownerClassFqn, MethodSignature signature, Location loc, Set<String> modifiers) {}
+      String ownerClassFqn, MethodSignature signature, Location loc, Set<String> modifiers) {
+    LOG.warning("Constructor reporting is not implemented by this SymbolReporter for " + ownerClassFqn);
+  }
 
   default void reportConstructor(
       String ownerClassFqn,

@@ -8,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
@@ -15,6 +17,7 @@ import org.objectweb.asm.Opcodes;
 import se.alipsa.jvmpls.core.model.SymbolInfo;
 
 public final class JdkIndex {
+  private static final Logger LOG = Logger.getLogger(JdkIndex.class.getName());
 
   public ScannedTypeCatalog scan(Path targetJdkHome) {
     Path current = currentJdkHome();
@@ -45,7 +48,8 @@ public final class JdkIndex {
           }
         }
       }
-    } catch (IOException ignored) {
+    } catch (IOException e) {
+      LOG.log(Level.WARNING, "Failed to scan JDK runtime image for external symbols", e);
       return ScannedTypeCatalog.builder().build();
     }
     return builder.build();
@@ -69,7 +73,8 @@ public final class JdkIndex {
           }
         }
       }
-    } catch (IOException ignored) {
+    } catch (IOException e) {
+      LOG.log(Level.WARNING, "Failed to scan JDK jmods at " + jmodsDir, e);
       return ScannedTypeCatalog.builder().build();
     }
     return builder.build();
@@ -92,8 +97,8 @@ public final class JdkIndex {
               java.util.Arrays.stream(reader.getInterfaces())
                   .map(name -> name.replace('/', '.'))
                   .toList()));
-    } catch (IOException ignored) {
-      // skip unreadable class files
+    } catch (IOException e) {
+      LOG.log(Level.FINE, "Skipping unreadable JDK class " + resourceUri, e);
     }
   }
 
