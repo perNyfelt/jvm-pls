@@ -378,45 +378,73 @@ mvn spotless:apply spotbugs:check
 
 ---
 
-## Review Output Format
+## Review Output Format (Compact - Copy-Paste Ready)
 
-Structure findings as:
+Output ONLY issues and actionable suggestions. Skip positive assessments entirely.
 
 ```markdown
 ## Critical Issues (X found)
 
-1. **[Brief name]**
-   - Location: `File.java:line`
+1. **[Brief name]** `File.java:line`
    - Problem: One-line description
    - Fix: Specific recommendation
 
 ## Important Issues (X found)
 
+1. **[Brief name]** `File.java:line`
+   - Problem: One-line description  
+   - Fix: Specific recommendation
+
 ## Minor Issues (X found)
 
-## Test Coverage Gaps
+1. **[Brief name]** `File.java:line`
+   - Fix: Specific recommendation
 
-| Priority | Gap | Suggested Test |
-|----------|-----|----------------|
-| 1 | ... | ... |
+## Action Items for Claude/Codex
+
+Execute these fixes in order:
+
+### 1. Fix [issue name] in `File.java`
+```java
+// Current code (line X-Y)
+[problematic code]
+
+// Replace with:
+[fixed code]
 ```
+
+### 2. Fix [issue name] in `File.java`
+...
+
+## Test Commands to Verify
+
+```bash
+# Run tests for affected modules
+mvn -pl jvmpls-[module] test -Dtest='*Test'
+mvn spotbugs:check
+```
+```
+
+**Rules:**
+- Only list findings that require action
+- Group related issues together
+- Provide exact file paths and line numbers
+- Include ready-to-paste code snippets for fixes
+- Include exact test commands to verify fixes
+- Omit "Good", "Correct", "Well done" assessments entirely
+- Omit summary sections unless there are >10 issues
 
 ---
 
-## Self-Correction Checklist
+## Pre-Submit Checklist (Ensure Actionable Output)
 
-Before submitting review, verify:
+Before finalizing, verify your review has:
 
-- [ ] Did I check EVERY public constructor for null validation?
-- [ ] Did I test null inputs on EVERY public method?
-- [ ] Did I search for AGENTS.md anti-patterns?
-- [ ] Did I question any silent data dropping?
-- [ ] Did I verify JavaDoc on ALL public types?
-- [ ] Did I actually run the tests?
-- [ ] Did I verify build passes with spotless/spotbugs?
-- [ ] Did I check for thread safety issues?
-- [ ] Did I verify URI/path handling is secure?
-- [ ] Did I check for memory leaks in per-file caches?
+- [ ] Only actionable issues listed (no praise/assessments)
+- [ ] Every issue has file path + line number
+- [ ] Critical/Important issues have before/after code snippets
+- [ ] Test commands provided to verify fixes
+- [ ] Build verified: `mvn spotless:apply spotbugs:check test`
 
 ---
 
@@ -441,10 +469,62 @@ find src/main/java -name "*.java" -exec grep -n "static.*= new" {} + | grep -v "
 
 ---
 
+## Example Compact Review Output
+
+```markdown
+## Critical Issues (1 found)
+
+1. **[NPE risk in resolveSymbol]** `GroovyPlugin.java:234`
+   - Problem: `ctx.pkg` null check at line 234 but dereferenced at line 215
+   - Fix: Initialize with `Objects.requireNonNullElse(ctx.pkg, "")` at method start
+
+## Important Issues (2 found)
+
+1. **[Resource leak in scanJmods]** `JdkIndex.java:55`
+   - Problem: `DirectoryStream` not closed in try-with-resources
+   - Fix: Wrap `Files.newDirectoryStream()` in try-with-resources
+
+2. **[Missing defensive copy]** `SymbolInfo.java:103-104`
+   - Problem: Mutable collections stored directly in constructor
+   - Fix: 
+     ```java
+     this.modifiers = modifiers == null ? Set.of() : Set.copyOf(modifiers);
+     this.typeParameters = typeParameters == null ? List.of() : List.copyOf(typeParameters);
+     ```
+
+## Action Items for Claude/Codex
+
+### 1. Fix NPE risk in GroovyPlugin.java
+```java
+// Line 222: Add before existing code
+ctx.pkg = Objects.requireNonNullElse(ctx.pkg, "");
+```
+
+### 2. Fix resource leak in JdkIndex.java
+```java
+// Line 55: Change from:
+for (Path jmod : Files.newDirectoryStream(jmodsDir, "*.jmod")) {
+// To:
+try (var dirStream = Files.newDirectoryStream(jmodsDir, "*.jmod")) {
+    for (Path jmod : dirStream) {
+```
+
+### 3. Fix defensive copy in SymbolInfo.java
+// See Important Issue #2 above
+
+## Test Commands
+```bash
+mvn -pl jvmpls-groovy,jvmpls-classpath,jvmpls-core test
+mvn spotbugs:check
+```
+```
+
+---
+
 ## Remember
 
 > The goal is not to find *something* to criticize. The goal is to ensure no preventable bugs reach production.
 
-Be thorough. Be skeptical. Be helpful.
+Be thorough. Be skeptical. Be helpful. But be concise.
 
 > For jvm-pls specifically: Remember this is a developer tool. False positives in diagnostics are annoying, false negatives are tolerable. Get the common cases right, handle edge cases gracefully.
