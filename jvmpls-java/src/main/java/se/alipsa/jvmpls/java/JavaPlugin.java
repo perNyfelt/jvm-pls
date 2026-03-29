@@ -321,14 +321,27 @@ public final class JavaPlugin implements JvmLangPlugin {
       }
       JvmType resolvedType = symbol.getResolvedType();
       if (resolvedType instanceof ClassType classType) {
-        for (SymbolInfo member : core.membersOf(classType.fqName())) {
-          String name = memberName(member);
-          if (name.startsWith(memberPrefix) && isVisible(member, ownerClass, core)) {
-            addMember(out, member, name);
-          }
-        }
+        collectMembersForType(classType.fqName(), ownerClass, classType.fqName(), memberPrefix, core, out, new LinkedHashSet<>());
       }
       return;
+    }
+  }
+
+  private void collectMembersForType(String typeFqn, String currentOwner, String receiverType,
+                                     String memberPrefix, CoreQuery core,
+                                     java.util.Map<String, CompletionItem> out,
+                                     Set<String> visitedTypes) {
+    if (typeFqn == null || typeFqn.isBlank() || !visitedTypes.add(typeFqn)) {
+      return;
+    }
+    for (SymbolInfo member : core.membersOf(typeFqn)) {
+      String name = memberName(member);
+      if (name.startsWith(memberPrefix) && isVisible(member, currentOwner, receiverType, core)) {
+        addMember(out, member, name);
+      }
+    }
+    for (String supertype : directSupertypesOf(typeFqn, core)) {
+      collectMembersForType(supertype, currentOwner, receiverType, memberPrefix, core, out, visitedTypes);
     }
   }
 
@@ -504,7 +517,7 @@ public final class JavaPlugin implements JvmLangPlugin {
     return (pkg == null || pkg.isBlank()) ? simple : pkg + "." + simple;
   }
 
-  private boolean isVisible(SymbolInfo member, String currentOwner, CoreQuery core) {
+  private boolean isVisible(SymbolInfo member, String currentOwner, String receiverType, CoreQuery core) {
     Set<String> modifiers = member.getModifiers();
     if (member.getContainerFqName().equals(currentOwner)) {
       return true;
@@ -525,9 +538,15 @@ public final class JavaPlugin implements JvmLangPlugin {
     }
     if (modifiers.contains("protected")) {
       return Objects.equals(currentPackage, ownerPackage)
-          || isSubtypeOf(currentOwner, member.getContainerFqName(), core, new LinkedHashSet<>());
+          || (isSubtypeOrSame(currentOwner, member.getContainerFqName(), core)
+              && isSubtypeOrSame(receiverType, currentOwner, core));
     }
     return false;
+  }
+
+  private boolean isSubtypeOrSame(String sourceType, String targetType, CoreQuery core) {
+    return Objects.equals(sourceType, targetType)
+        || isSubtypeOf(sourceType, targetType, core, new LinkedHashSet<>());
   }
 
   private boolean isSubtypeOf(String currentType, String targetType, CoreQuery core, Set<String> visited) {

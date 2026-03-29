@@ -258,7 +258,7 @@ class JavaPluginCompletionsTest {
     String mainCode = """
       package other;
       class Consumer extends Sub {
-        Sub sibling;
+        Consumer sibling;
         void m() {
           sibling.pro/*caret*/
         }
@@ -274,7 +274,7 @@ class JavaPluginCompletionsTest {
 
       List<CompletionItem> items = server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/"));
       assertTrue(containsLabel(items, "protectedMethod"),
-          "Protected members should remain visible from cross-package subclasses");
+          "Protected members should remain visible through subtype-qualified access");
     }
   }
 

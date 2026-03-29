@@ -266,7 +266,7 @@ class GroovyPluginCompletionsTest {
     String mainCode = """
       package other
       class Consumer extends Sub {
-        Sub sibling
+        Consumer sibling
         void run() {
           sibling.pro/*caret*/
         }
@@ -282,7 +282,7 @@ class GroovyPluginCompletionsTest {
 
       List<CompletionItem> items = server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/"));
       assertTrue(containsLabel(items, "protectedMethod"),
-          "Protected members should remain visible from cross-package subclasses");
+          "Protected members should remain visible through subtype-qualified access");
     }
   }
 
