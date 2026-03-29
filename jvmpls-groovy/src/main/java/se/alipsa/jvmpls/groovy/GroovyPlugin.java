@@ -14,8 +14,12 @@ import org.codehaus.groovy.ast.expr.ArgumentListExpression;
 import org.codehaus.groovy.ast.expr.BinaryExpression;
 import org.codehaus.groovy.ast.expr.ClassExpression;
 import org.codehaus.groovy.ast.expr.ClosureExpression;
+import org.codehaus.groovy.ast.expr.ConstantExpression;
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression;
 import org.codehaus.groovy.ast.expr.Expression;
+import org.codehaus.groovy.ast.expr.GStringExpression;
 import org.codehaus.groovy.ast.expr.ListExpression;
+import org.codehaus.groovy.ast.expr.MapExpression;
 import org.codehaus.groovy.ast.expr.MethodCallExpression;
 import org.codehaus.groovy.ast.expr.PropertyExpression;
 import org.codehaus.groovy.ast.expr.TupleExpression;
@@ -792,16 +796,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
         if (!(receiverType instanceof ClassType classType)) {
           continue;
         }
-        MethodSignature projected =
-            new MethodSignature(
-                signature.parameterTypes().subList(1, signature.parameterTypes().size()),
-                signature.returnType(),
-                signature.parameterNames().size() <= 1
-                    ? List.of()
-                    : signature.parameterNames().subList(1, signature.parameterNames().size()),
-                signature.typeParameters(),
-                signature.throwsTypes(),
-                withoutStatic(signature.modifiers()));
+        MethodSignature projected = projectCategorySignature(signature);
         scoped.add(
             new ScopedSyntheticMember(
                 classType.fqName(),
@@ -931,9 +926,6 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private void runSemanticDiagnostics(
       String fileUri, Collection<ClassNode> classes, List<Diagnostic> diagnostics, FileCtx ctx) {
-    if (strictStaticScopesByUri.getOrDefault(fileUri, List.of()).isEmpty()) {
-      return;
-    }
     CoreQuery core = coreQuery;
     if (core == null) {
       warnMissingCore(fileUri, "semantic diagnostics");
@@ -1297,11 +1289,89 @@ public final class GroovyPlugin implements JvmLangPlugin {
     if (expression == null) {
       return DynamicType.INSTANCE;
     }
+    if (expression instanceof ConstructorCallExpression constructorCall) {
+      return typeOf(constructorCall.getType(), ctx);
+    }
+    if (expression instanceof ClassExpression classExpression) {
+      return typeOf(classExpression.getType(), ctx);
+    }
+    if (expression instanceof ConstantExpression constant) {
+      ClassNode type = constant.getType();
+      if (type != null && type != ClassHelper.DYNAMIC_TYPE) {
+        return typeOf(type, ctx);
+      }
+    }
+    if (expression instanceof GStringExpression) {
+      return new ClassType("groovy.lang.GString", List.of());
+    }
+    if (expression instanceof ListExpression) {
+      return new ClassType("java.util.List", List.of());
+    }
+    if (expression instanceof MapExpression) {
+      return new ClassType("java.util.Map", List.of());
+    }
     ClassNode type = expression.getType();
     if (type == null || type == ClassHelper.DYNAMIC_TYPE) {
       return DynamicType.INSTANCE;
     }
     return typeOf(type, ctx);
+  }
+
+  private static MethodSignature projectCategorySignature(MethodSignature signature) {
+    List<JvmType> parameterTypes =
+        signature.parameterTypes().subList(1, signature.parameterTypes().size());
+    List<String> parameterNames =
+        signature.parameterNames().size() <= 1
+            ? List.of()
+            : signature.parameterNames().subList(1, signature.parameterNames().size());
+    List<JvmType> throwsTypes = signature.throwsTypes();
+    List<String> typeParameters =
+        signature.typeParameters().stream()
+            .filter(
+                declaration ->
+                    referencesTypeParameter(
+                        declaration, parameterTypes, signature.returnType(), throwsTypes))
+            .toList();
+    return new MethodSignature(
+        parameterTypes,
+        signature.returnType(),
+        parameterNames,
+        typeParameters,
+        throwsTypes,
+        withoutStatic(signature.modifiers()));
+  }
+
+  private static boolean referencesTypeParameter(
+      String declaration,
+      List<JvmType> parameterTypes,
+      JvmType returnType,
+      List<JvmType> throwsTypes) {
+    String name = typeParameterName(declaration);
+    if (name == null) {
+      return false;
+    }
+    if (returnType.displayName().contains(name)) {
+      return true;
+    }
+    for (JvmType parameterType : parameterTypes) {
+      if (parameterType.displayName().contains(name)) {
+        return true;
+      }
+    }
+    for (JvmType throwsType : throwsTypes) {
+      if (throwsType.displayName().contains(name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static String typeParameterName(String declaration) {
+    if (declaration == null) {
+      return null;
+    }
+    int space = declaration.indexOf(' ');
+    return (space < 0 ? declaration : declaration.substring(0, space)).trim();
   }
 
   private static Set<String> withoutStatic(Set<String> modifiers) {

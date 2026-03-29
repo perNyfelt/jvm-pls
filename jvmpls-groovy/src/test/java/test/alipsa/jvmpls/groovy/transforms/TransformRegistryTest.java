@@ -103,6 +103,76 @@ class TransformRegistryTest {
   }
 
   @Test
+  void delegate_protected_visibility_requires_a_valid_subclass_receiver_context() {
+    TransformRegistry registry = new TransformRegistry();
+    ClassNode allowedOwner =
+        parsePrimaryClass(
+            """
+            package other
+            class Consumer extends Sub {
+              @groovy.lang.Delegate other.Consumer delegate
+            }
+            """);
+    ClassNode deniedOwner =
+        parsePrimaryClass(
+            """
+            package other
+            class Consumer extends demo.Base {
+              @groovy.lang.Delegate other.Sub delegate
+            }
+            """);
+
+    CoreQuery core =
+        new CoreQuery() {
+          @Override
+          public Optional<SymbolInfo> findByFqn(String fqn) {
+            return Optional.empty();
+          }
+
+          @Override
+          public List<SymbolInfo> findBySimpleName(String simpleName) {
+            return List.of();
+          }
+
+          @Override
+          public List<SymbolInfo> allInPackage(String pkgFqn) {
+            return List.of();
+          }
+
+          @Override
+          public List<SymbolInfo> membersOf(String ownerFqn) {
+            if ("other.Consumer".equals(ownerFqn) || "other.Sub".equals(ownerFqn)) {
+              return List.of(method("demo.Base", "prot", Set.of("protected")));
+            }
+            else {
+              return List.of();
+            }
+          }
+
+          @Override
+          public List<String> supertypesOf(String typeFqn) {
+            return switch (typeFqn) {
+              case "other.Consumer" -> List.of("other.Sub");
+              case "other.Sub" -> List.of("demo.Base");
+              default -> List.of();
+            };
+          }
+        };
+
+    List<String> allowed =
+        memberNames(
+            registry.analyzeClass(
+                allowedOwner, contextFor("file:///Consumer.groovy", "other.Consumer", core)));
+    List<String> denied =
+        memberNames(
+            registry.analyzeClass(
+                deniedOwner, contextFor("file:///Consumer.groovy", "other.Consumer", core)));
+
+    assertEquals(List.of("prot"), allowed);
+    assertEquals(List.of(), denied);
+  }
+
+  @Test
   void constructor_transforms_do_not_duplicate_each_other_or_explicit_constructors() {
     TransformRegistry registry = new TransformRegistry();
 

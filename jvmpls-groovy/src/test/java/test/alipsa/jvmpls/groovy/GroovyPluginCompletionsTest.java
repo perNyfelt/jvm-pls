@@ -568,6 +568,40 @@ class GroovyPluginCompletionsTest {
     }
   }
 
+  @Test
+  void infers_metaClass_field_type_for_concrete_constructor_assignments() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-groovy-phase5-metaclass-field");
+
+    Path main = dir.resolve("Main.groovy");
+    String mainCode = """
+      package demo
+
+      class Extra {}
+      class Thing {}
+
+      Thing.metaClass.helper = new Extra()
+
+      class Main {
+        Thing thing = new Thing()
+        void run() {
+          thing.he/*caret*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      CompletionItem helper =
+          byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/")), "helper");
+      assertNotNull(helper, "metaClass-added fields should be visible on the target type");
+      assertEquals("demo.Extra", helper.getTypeDetail(),
+          "metaClass field completions should preserve obvious concrete RHS types");
+    }
+  }
+
   // ---------- helpers ----------
 
   private static boolean containsLabel(List<CompletionItem> items, String label) {
