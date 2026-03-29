@@ -18,6 +18,9 @@ import se.alipsa.jvmpls.core.model.CompletionItem;
 import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.model.Position;
 import se.alipsa.jvmpls.core.server.CoreServer;
+import se.alipsa.jvmpls.core.types.ClassType;
+import se.alipsa.jvmpls.core.types.JvmType;
+import se.alipsa.jvmpls.core.types.MethodSignature;
 
 class GroovyPluginCompletionsTest {
 
@@ -568,6 +571,33 @@ class GroovyPluginCompletionsTest {
     }
   }
 
+  @Test
+  void project_category_signature_keeps_transitive_generic_dependencies() throws Exception {
+    MethodSignature signature =
+        new MethodSignature(
+            List.of(new ClassType("S", List.of()), new ClassType("T", List.of())),
+            new ClassType("T", List.of()),
+            List.of("self", "arg"),
+            List.of("S", "T extends S"),
+            List.of(),
+            java.util.Set.of("public", "static"));
+
+    java.lang.reflect.Method method =
+        se.alipsa.jvmpls.groovy.GroovyPlugin.class.getDeclaredMethod(
+            "projectCategorySignature", MethodSignature.class);
+    method.setAccessible(true);
+    MethodSignature projected = (MethodSignature) method.invoke(null, signature);
+
+    assertEquals(
+        List.of("S", "T extends S"),
+        projected.typeParameters(),
+        "Projected category signatures should retain transitive generic dependencies from kept"
+            + " type parameters");
+    assertEquals(List.of("arg"), projected.parameterNames());
+    assertEquals(List.of((JvmType) new ClassType("T", List.of())), projected.parameterTypes());
+  }
+
+  @Test
   void infers_metaClass_field_type_for_concrete_constructor_assignments() throws Exception {
     Path dir = Files.createTempDirectory("jvmpls-groovy-phase5-metaclass-field");
 

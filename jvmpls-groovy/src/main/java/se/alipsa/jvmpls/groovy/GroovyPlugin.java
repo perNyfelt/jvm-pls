@@ -1325,13 +1325,15 @@ public final class GroovyPlugin implements JvmLangPlugin {
             ? List.of()
             : signature.parameterNames().subList(1, signature.parameterNames().size());
     List<JvmType> throwsTypes = signature.throwsTypes();
+    List<String> declarations = signature.typeParameters();
+    LinkedHashSet<String> requiredTypeParameters = new LinkedHashSet<>();
+    for (String declaration : declarations) {
+      if (referencesTypeParameter(declaration, parameterTypes, signature.returnType(), throwsTypes)) {
+        collectTypeParameterDependencies(declaration, declarations, requiredTypeParameters);
+      }
+    }
     List<String> typeParameters =
-        signature.typeParameters().stream()
-            .filter(
-                declaration ->
-                    referencesTypeParameter(
-                        declaration, parameterTypes, signature.returnType(), throwsTypes))
-            .toList();
+        declarations.stream().filter(requiredTypeParameters::contains).toList();
     return new MethodSignature(
         parameterTypes,
         signature.returnType(),
@@ -1364,6 +1366,23 @@ public final class GroovyPlugin implements JvmLangPlugin {
       }
     }
     return false;
+  }
+
+  private static void collectTypeParameterDependencies(
+      String declaration, List<String> declarations, Set<String> required) {
+    String name = typeParameterName(declaration);
+    if (name == null || !required.add(declaration)) {
+      return;
+    }
+    for (String candidate : declarations) {
+      if (candidate.equals(declaration)) {
+        continue;
+      }
+      String candidateName = typeParameterName(candidate);
+      if (candidateName != null && declaration.contains(candidateName)) {
+        collectTypeParameterDependencies(candidate, declarations, required);
+      }
+    }
   }
 
   private static String typeParameterName(String declaration) {
