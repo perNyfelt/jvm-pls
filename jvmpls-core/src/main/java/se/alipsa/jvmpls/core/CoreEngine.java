@@ -89,7 +89,7 @@ public final class CoreEngine implements CoreFacade {
     String token = TokenUtil.tokenAt(text, offset);
 
     try {
-      SymbolInfo sym = pl.resolveSymbol(uri, token, index);
+      SymbolInfo sym = pl.resolveSymbol(uri, token, position, index);
       return sym == null ? Optional.empty() : Optional.ofNullable(sym.getLocation());
     } catch (Throwable t) {
       LOG.log(Level.SEVERE, "Definition request failed for " + uri, t);

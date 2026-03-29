@@ -393,6 +393,22 @@ class GroovyPluginCompletionsTest {
       """;
     Files.writeString(staticFile, staticCode, StandardCharsets.UTF_8);
 
+    Path getterFile = dir.resolve("GetterMain.groovy");
+    String getterCode = """
+      package demo
+      import groovy.transform.CompileStatic
+      import java.util.Date
+
+      @CompileStatic
+      class GetterMain {
+        Date date = new Date()
+        long read() {
+          date.time
+        }
+      }
+      """;
+    Files.writeString(getterFile, getterCode, StandardCharsets.UTF_8);
+
     Path dynamicFile = dir.resolve("DynamicMain.groovy");
     String dynamicCode = """
       package demo
@@ -411,6 +427,7 @@ class GroovyPluginCompletionsTest {
 
     try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
       List<Diagnostic> strictDiags = server.openFile(staticFile.toUri().toString(), staticCode);
+      List<Diagnostic> getterDiags = server.openFile(getterFile.toUri().toString(), getterCode);
       List<Diagnostic> dynamicDiags = server.openFile(dynamicFile.toUri().toString(), dynamicCode);
 
       assertTrue(strictDiags.stream().anyMatch(diag -> "undefined-method".equals(diag.getCode())),
@@ -420,6 +437,44 @@ class GroovyPluginCompletionsTest {
       assertTrue(dynamicDiags.stream().noneMatch(diag -> "undefined-method".equals(diag.getCode())
           || "undefined-property".equals(diag.getCode())),
           "Dynamic classes should not emit synthetic undefined-member diagnostics");
+      assertTrue(getterDiags.stream().noneMatch(diag -> "undefined-property".equals(diag.getCode())),
+          "Getter-backed bean properties should remain valid in strict static mode");
+    }
+  }
+
+  @Test
+  void completes_methods_from_all_categories_in_use_scope() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-groovy-phase5-categories");
+
+    Path main = dir.resolve("Main.groovy");
+    String mainCode = """
+      package demo
+
+      class FirstCategory {
+        static String alpha(String self) { self + "a" }
+      }
+
+      class SecondCategory {
+        static String beta(String self) { self + "b" }
+      }
+
+      class Main {
+        String value = "x"
+        void run() {
+          use(FirstCategory, SecondCategory) {
+            value.be/*caret*/
+          }
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      CompletionItem beta = byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/")), "beta");
+      assertNotNull(beta, "Later categories in use(A, B) should also contribute scoped members");
     }
   }
 

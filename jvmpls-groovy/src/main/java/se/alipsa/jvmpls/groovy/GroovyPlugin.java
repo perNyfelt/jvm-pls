@@ -160,6 +160,11 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   @Override
   public SymbolInfo resolveSymbol(String fileUri, String symbolName, CoreQuery core) {
+    return resolveSymbol(fileUri, symbolName, null, core);
+  }
+
+  @Override
+  public SymbolInfo resolveSymbol(String fileUri, String symbolName, Position position, CoreQuery core) {
     if (symbolName == null || symbolName.isBlank()) return null;
 
     // Try full FQN first (e.g., demo.Hello)
@@ -172,6 +177,20 @@ public final class GroovyPlugin implements JvmLangPlugin {
     }
 
     FileCtx ctx = ctxByUri.getOrDefault(fileUri, new FileCtx());
+    String content = contentByUri.get(fileUri);
+    String currentOwnerFqn = ownerAt(fileUri, position, ctx.primaryClassFqn);
+    GroovyMemberResolver resolver = memberResolver(core);
+
+    if (content != null && position != null) {
+      SymbolInfo receiverResolved = resolveQualifiedMember(fileUri, content, position, symbolName, ctx, resolver, currentOwnerFqn, core);
+      if (receiverResolved != null) {
+        return receiverResolved;
+      }
+      SymbolInfo scopedResolved = resolveImplicitMember(fileUri, position, symbolName, resolver, currentOwnerFqn);
+      if (scopedResolved != null) {
+        return scopedResolved;
+      }
+    }
 
     // Alias first: import foo.Bar as B
     String aliasHit = ctx.aliasToFqn.get(symbolName);
@@ -181,7 +200,6 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
     // Fallback: derive package from source text if we didn’t capture it during indexing
     if (ctx.pkg == null || ctx.pkg.isBlank()) {
-      String content = contentByUri.get(fileUri);
       if (content != null) {
         var m = PKG_DECL.matcher(content);
         if (m.find()) {
@@ -227,13 +245,22 @@ public final class GroovyPlugin implements JvmLangPlugin {
     if (candidates.size() == 1) return candidates.getFirst();
 
     String lookupName = symbolName;
-    if (ctx.primaryClassFqn != null && !ctx.primaryClassFqn.isBlank()) {
-      List<SymbolInfo> members = core.membersOf(ctx.primaryClassFqn).stream()
-          .filter(symbol -> lookupName.equals(memberName(symbol)))
+    if (currentOwnerFqn != null && !currentOwnerFqn.isBlank()) {
+      List<SymbolInfo> members = resolver.membersAt(fileUri, position, currentOwnerFqn).stream()
+          .filter(symbol -> matchesMemberName(symbol, lookupName))
           .toList();
       if (members.size() == 1) {
         return members.getFirst();
       }
+    }
+    List<SymbolInfo> syntheticMatches = core.findBySimpleName(lookupName).stream()
+        .filter(symbol -> id().equals(symbol.getLanguageId()))
+        .filter(symbol -> symbol.getSyntheticOrigin() != SyntheticOrigin.NONE)
+        .filter(symbol -> symbol.getLocation() != null && fileUri.equals(symbol.getLocation().getUri()))
+        .filter(symbol -> matchesMemberName(symbol, lookupName))
+        .toList();
+    if (syntheticMatches.size() == 1) {
+      return syntheticMatches.getFirst();
     }
     return null;
   }
@@ -639,46 +666,47 @@ public final class GroovyPlugin implements JvmLangPlugin {
     if (expressions.isEmpty() || closure == null) {
       return;
     }
-    Expression categoryExpression = expressions.getFirst();
-    String categoryName = classNameExpression(categoryExpression);
-    if (categoryName == null) {
-      return;
-    }
-    String categoryFqn = resolveTypeName(categoryName, ctx);
-    for (SymbolInfo symbol : core.membersOf(categoryFqn)) {
-      if (symbol.getKind() != SymbolInfo.Kind.METHOD || symbol.getMethodSignature() == null) {
+    for (Expression categoryExpression : expressions) {
+      String categoryName = classNameExpression(categoryExpression);
+      if (categoryName == null) {
         continue;
       }
-      if (!symbol.getModifiers().contains("static")) {
-        continue;
+      String categoryFqn = resolveTypeName(categoryName, ctx);
+      for (SymbolInfo symbol : core.membersOf(categoryFqn)) {
+        if (symbol.getKind() != SymbolInfo.Kind.METHOD || symbol.getMethodSignature() == null) {
+          continue;
+        }
+        if (!symbol.getModifiers().contains("static")) {
+          continue;
+        }
+        MethodSignature signature = symbol.getMethodSignature();
+        if (signature.parameterTypes().isEmpty()) {
+          continue;
+        }
+        JvmType receiverType = signature.parameterTypes().getFirst();
+        if (!(receiverType instanceof ClassType classType)) {
+          continue;
+        }
+        MethodSignature projected = new MethodSignature(
+            signature.parameterTypes().subList(1, signature.parameterTypes().size()),
+            signature.returnType(),
+            signature.parameterNames().size() <= 1 ? List.of() : signature.parameterNames().subList(1, signature.parameterNames().size()),
+            signature.typeParameters(),
+            signature.throwsTypes(),
+            withoutStatic(signature.modifiers()));
+        scoped.add(new ScopedSyntheticMember(classType.fqName(), toRange(closure),
+            new SymbolInfo("groovy", SymbolInfo.Kind.METHOD,
+                classType.fqName() + "#" + memberName(symbol) + JvmTypes.toLegacyMethodSignature(projected),
+                classType.fqName(),
+                symbol.getLocation(),
+                JvmTypes.toLegacyMethodSignature(projected),
+                projected.modifiers(),
+                projected.typeParameters(),
+                null,
+                projected,
+                SyntheticOrigin.CATEGORY,
+                InferenceConfidence.HIGH)));
       }
-      MethodSignature signature = symbol.getMethodSignature();
-      if (signature.parameterTypes().isEmpty()) {
-        continue;
-      }
-      JvmType receiverType = signature.parameterTypes().getFirst();
-      if (!(receiverType instanceof ClassType classType)) {
-        continue;
-      }
-      MethodSignature projected = new MethodSignature(
-          signature.parameterTypes().subList(1, signature.parameterTypes().size()),
-          signature.returnType(),
-          signature.parameterNames().size() <= 1 ? List.of() : signature.parameterNames().subList(1, signature.parameterNames().size()),
-          signature.typeParameters(),
-          signature.throwsTypes(),
-          withoutStatic(signature.modifiers()));
-      scoped.add(new ScopedSyntheticMember(classType.fqName(), toRange(closure),
-          new SymbolInfo("groovy", SymbolInfo.Kind.METHOD,
-              classType.fqName() + "#" + memberName(symbol) + JvmTypes.toLegacyMethodSignature(projected),
-              classType.fqName(),
-              symbol.getLocation(),
-              JvmTypes.toLegacyMethodSignature(projected),
-              projected.modifiers(),
-              projected.typeParameters(),
-              null,
-              projected,
-              SyntheticOrigin.CATEGORY,
-              InferenceConfidence.HIGH)));
     }
   }
 
@@ -785,7 +813,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
             String propertyName = expression.getPropertyAsString();
             if (propertyName != null && receiverType != null && !resolver.isDynamicPropertyType(receiverType)) {
               boolean found = resolver.membersAt(fileUri, toRange(expression).start, receiverType).stream()
-                  .anyMatch(symbol -> symbol.getKind() == SymbolInfo.Kind.FIELD && propertyName.equals(memberName(symbol)));
+                  .anyMatch(symbol -> isPropertySymbol(symbol, propertyName));
               if (!found) {
                 diagnostics.add(new Diagnostic(toRange(expression),
                     "Unknown property '" + propertyName + "' on " + receiverType,
@@ -1287,6 +1315,200 @@ public final class GroovyPlugin implements JvmLangPlugin {
       return open >= 0 ? suffix.substring(0, open) : suffix;
     }
     return simpleName(fqn);
+  }
+
+  private SymbolInfo resolveQualifiedMember(String fileUri, String content, Position position, String symbolName,
+                                            FileCtx ctx, GroovyMemberResolver resolver, String currentOwnerFqn,
+                                            CoreQuery core) {
+    if (currentOwnerFqn == null || currentOwnerFqn.isBlank()) {
+      return null;
+    }
+    String qualifier = null;
+    String dottedPrefix = completionPrefix(content, position);
+    int lastDot = dottedPrefix.lastIndexOf('.');
+    if (lastDot >= 0) {
+      String suffix = dottedPrefix.substring(lastDot + 1);
+      if (symbolName.equals(suffix)) {
+        qualifier = dottedPrefix.substring(0, lastDot);
+      }
+    }
+    if (qualifier == null) {
+      qualifier = qualifierBeforeToken(content, position);
+    }
+    if (qualifier == null || qualifier.isBlank()) {
+      return null;
+    }
+    String receiverType = receiverTypeForQualifier(qualifier, currentOwnerFqn, ctx, resolver, fileUri, position, core);
+    if (receiverType == null) {
+      return null;
+    }
+    List<SymbolInfo> matches = resolver.membersAt(fileUri, position, receiverType).stream()
+        .filter(symbol -> matchesMemberName(symbol, symbolName))
+        .toList();
+    if (matches.isEmpty()) {
+      matches = core.membersOf(receiverType).stream()
+          .filter(symbol -> matchesMemberName(symbol, symbolName))
+          .toList();
+    }
+    return matches.size() == 1 ? matches.getFirst() : null;
+  }
+
+  private SymbolInfo resolveImplicitMember(String fileUri, Position position, String symbolName,
+                                           GroovyMemberResolver resolver, String currentOwnerFqn) {
+    if (currentOwnerFqn == null || currentOwnerFqn.isBlank()) {
+      return null;
+    }
+    List<SymbolInfo> matches = resolver.membersAt(fileUri, position, currentOwnerFqn).stream()
+        .filter(symbol -> matchesMemberName(symbol, symbolName))
+        .toList();
+    return matches.size() == 1 ? matches.getFirst() : null;
+  }
+
+  private String receiverTypeForQualifier(String qualifier, String ownerFqn, FileCtx ctx,
+                                          GroovyMemberResolver resolver, String fileUri, Position position,
+                                          CoreQuery core) {
+    String[] parts = qualifier.split("\\.");
+    String currentType = null;
+    for (int i = 0; i < parts.length; i++) {
+      String part = parts[i];
+      if (part.isBlank()) {
+        return null;
+      }
+      if (i == 0) {
+        if ("this".equals(part)) {
+          currentType = ownerFqn;
+          continue;
+        }
+        String resolvedType = resolveTypeName(part, ctx);
+        if (resolvedType != null && core.findByFqn(resolvedType).isPresent()) {
+          currentType = resolvedType;
+          continue;
+        }
+        currentType = memberType(ownerFqn, part, resolver, fileUri, position);
+        if (currentType == null) {
+          currentType = directMemberType(ownerFqn, part, core);
+        }
+      } else {
+        currentType = memberType(currentType, part, resolver, fileUri, position);
+        if (currentType == null) {
+          currentType = directMemberType(currentType, part, core);
+        }
+      }
+      if (currentType == null) {
+        return null;
+      }
+    }
+    return currentType;
+  }
+
+  private String memberType(String receiverType, String memberName, GroovyMemberResolver resolver,
+                            String fileUri, Position position) {
+    if (receiverType == null) {
+      return null;
+    }
+    for (SymbolInfo symbol : resolver.membersAt(fileUri, position, receiverType)) {
+      if (!matchesMemberName(symbol, memberName)) {
+        continue;
+      }
+      if (symbol.getResolvedType() instanceof ClassType classType) {
+        return classType.fqName();
+      }
+      if (symbol.getMethodSignature() != null && symbol.getMethodSignature().returnType() instanceof ClassType classType) {
+        return classType.fqName();
+      }
+    }
+    return null;
+  }
+
+  private static String directMemberType(String receiverType, String memberName, CoreQuery core) {
+    if (receiverType == null || core == null) {
+      return null;
+    }
+    for (SymbolInfo symbol : core.membersOf(receiverType)) {
+      if (!matchesMemberName(symbol, memberName)) {
+        continue;
+      }
+      if (symbol.getResolvedType() instanceof ClassType classType) {
+        return classType.fqName();
+      }
+      if (symbol.getMethodSignature() != null && symbol.getMethodSignature().returnType() instanceof ClassType classType) {
+        return classType.fqName();
+      }
+    }
+    return null;
+  }
+
+  private static String qualifierBeforeToken(String content, Position position) {
+    if (content == null || position == null) {
+      return null;
+    }
+    int offset = se.alipsa.jvmpls.core.TokenUtil.positionToOffset(content, position.line, position.column);
+    int n = content.length();
+    int i = Math.max(0, Math.min(offset, n - 1));
+    if (!isWord(content.charAt(i)) && i > 0 && isWord(content.charAt(i - 1))) {
+      i--;
+    }
+    int start = i;
+    while (start > 0 && isWord(content.charAt(start - 1))) {
+      start--;
+    }
+    int dot = start - 1;
+    while (dot >= 0 && Character.isWhitespace(content.charAt(dot))) {
+      dot--;
+    }
+    if (dot < 0 || content.charAt(dot) != '.') {
+      return null;
+    }
+    int end = dot;
+    int qualifierStart = end;
+    while (qualifierStart > 0) {
+      char c = content.charAt(qualifierStart - 1);
+      if (!(isWord(c) || c == '.')) {
+        break;
+      }
+      qualifierStart--;
+    }
+    return qualifierStart == end ? null : content.substring(qualifierStart, end);
+  }
+
+  private static boolean matchesMemberName(SymbolInfo symbol, String lookupName) {
+    return lookupName.equals(memberName(symbol)) || isPropertySymbol(symbol, lookupName);
+  }
+
+  private static boolean isPropertySymbol(SymbolInfo symbol, String propertyName) {
+    if (symbol.getKind() == SymbolInfo.Kind.FIELD) {
+      return propertyName.equals(memberName(symbol));
+    }
+    if (symbol.getKind() != SymbolInfo.Kind.METHOD || symbol.getMethodSignature() == null
+        || !symbol.getMethodSignature().parameterTypes().isEmpty()) {
+      return false;
+    }
+    String getterProperty = getterPropertyName(memberName(symbol));
+    return propertyName.equals(getterProperty);
+  }
+
+  private static String getterPropertyName(String methodName) {
+    if (methodName.startsWith("get") && methodName.length() > 3) {
+      return decapitalize(methodName.substring(3));
+    }
+    if (methodName.startsWith("is") && methodName.length() > 2) {
+      return decapitalize(methodName.substring(2));
+    }
+    return null;
+  }
+
+  private static String decapitalize(String value) {
+    if (value == null || value.isEmpty()) {
+      return value;
+    }
+    if (value.length() > 1 && Character.isUpperCase(value.charAt(1)) && Character.isUpperCase(value.charAt(0))) {
+      return value;
+    }
+    return Character.toLowerCase(value.charAt(0)) + value.substring(1);
+  }
+
+  private static boolean isWord(char c) {
+    return Character.isAlphabetic(c) || Character.isDigit(c) || c == '_' || c == '$';
   }
 
   private static Set<String> modifiers(int flags) {

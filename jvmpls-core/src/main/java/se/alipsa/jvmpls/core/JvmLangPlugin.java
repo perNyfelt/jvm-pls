@@ -35,6 +35,11 @@ public interface JvmLangPlugin {
   /** Attempt to resolve a symbol name in file context to a known symbol. */
   default SymbolInfo resolveSymbol(String fileUri, String symbolName, CoreQuery core) { return null; }
 
+  /** Attempt to resolve a symbol name at a specific position in file context to a known symbol. */
+  default SymbolInfo resolveSymbol(String fileUri, String symbolName, Position position, CoreQuery core) {
+    return resolveSymbol(fileUri, symbolName, core);
+  }
+
   /** Language-specific completions. */
   default List<CompletionItem> completions(String fileUri, Position position, CoreQuery core) { return List.of(); }
 
@@ -42,4 +47,3 @@ public interface JvmLangPlugin {
   default void forget(String fileUri) {}
 
 }
-
