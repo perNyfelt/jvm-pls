@@ -3,9 +3,7 @@ package se.alipsa.jvmpls.core;
 import java.nio.file.Path;
 import java.util.List;
 
-/**
- * Context passed to {@link SymbolProviderFactory} implementations.
- */
+/** Context passed to {@link SymbolProviderFactory} implementations. */
 public record SymbolProviderContext(List<String> classpathEntries, Path targetJdkHome) {
 
   public SymbolProviderContext {

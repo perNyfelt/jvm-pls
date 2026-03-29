@@ -2,7 +2,11 @@ package se.alipsa.jvmpls.core.types;
 
 public record WildcardType(Variance variance, JvmType bound) implements JvmType {
 
-  public enum Variance { UNBOUNDED, EXTENDS, SUPER }
+  public enum Variance {
+    UNBOUNDED,
+    EXTENDS,
+    SUPER
+  }
 
   public WildcardType {
     variance = variance == null ? Variance.UNBOUNDED : variance;

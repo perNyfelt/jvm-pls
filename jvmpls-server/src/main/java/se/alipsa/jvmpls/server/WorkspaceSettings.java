@@ -7,9 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
-record WorkspaceSettings(String buildToolId,
-                         List<String> classpathEntries,
-                         Path targetJdkHome) {
+record WorkspaceSettings(String buildToolId, List<String> classpathEntries, Path targetJdkHome) {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSettings.class.getName());
 
@@ -26,8 +24,9 @@ record WorkspaceSettings(String buildToolId,
       return empty();
     }
     if (!(rawSettings instanceof Map<?, ?> settings)) {
-      LOG.warning("Ignoring unsupported workspace settings payload of type "
-          + rawSettings.getClass().getName());
+      LOG.warning(
+          "Ignoring unsupported workspace settings payload of type "
+              + rawSettings.getClass().getName());
       return empty();
     }
 

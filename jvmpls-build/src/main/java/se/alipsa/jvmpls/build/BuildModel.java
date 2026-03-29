@@ -6,19 +6,20 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Immutable workspace-level build description produced by a {@link BuildToolPlugin}.
- * It contains the source roots, classpath, modules, target JDK, and build files
- * that the language server needs to configure external symbol resolution.
+ * Immutable workspace-level build description produced by a {@link BuildToolPlugin}. It contains
+ * the source roots, classpath, modules, target JDK, and build files that the language server needs
+ * to configure external symbol resolution.
  */
-public record BuildModel(String toolId,
-                         Path projectRoot,
-                         List<Path> sourceRoots,
-                         List<Path> testSourceRoots,
-                         List<String> classpathEntries,
-                         List<Path> outputDirectories,
-                         List<BuildModule> modules,
-                         Path targetJdkHome,
-                         List<Path> watchedFiles) {
+public record BuildModel(
+    String toolId,
+    Path projectRoot,
+    List<Path> sourceRoots,
+    List<Path> testSourceRoots,
+    List<String> classpathEntries,
+    List<Path> outputDirectories,
+    List<BuildModule> modules,
+    Path targetJdkHome,
+    List<Path> watchedFiles) {
 
   public BuildModel {
     toolId = Objects.requireNonNull(toolId, "toolId");
@@ -35,7 +36,15 @@ public record BuildModel(String toolId,
     if (additionalWatchedFiles != null) {
       merged.addAll(additionalWatchedFiles);
     }
-    return new BuildModel(toolId, projectRoot, sourceRoots, testSourceRoots, classpathEntries,
-        outputDirectories, modules, targetJdkHome, List.copyOf(merged));
+    return new BuildModel(
+        toolId,
+        projectRoot,
+        sourceRoots,
+        testSourceRoots,
+        classpathEntries,
+        outputDirectories,
+        modules,
+        targetJdkHome,
+        List.copyOf(merged));
   }
 }

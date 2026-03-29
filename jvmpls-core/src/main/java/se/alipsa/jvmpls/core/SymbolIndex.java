@@ -1,11 +1,11 @@
 package se.alipsa.jvmpls.core;
 
-import se.alipsa.jvmpls.core.model.SymbolInfo;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import se.alipsa.jvmpls.core.model.SymbolInfo;
 
 public final class SymbolIndex implements CoreQuery {
   private static final Logger LOG = Logger.getLogger(SymbolIndex.class.getName());
@@ -58,17 +58,20 @@ public final class SymbolIndex implements CoreQuery {
     return providerByFqnCache.computeIfAbsent(fqn, this::resolveExternalByFqn);
   }
 
-  @Override public List<SymbolInfo> allInPackage(String pkg) {
+  @Override
+  public List<SymbolInfo> allInPackage(String pkg) {
     String prefix = pkg.endsWith(".") ? pkg : (pkg + ".");
     Map<String, SymbolInfo> out = new LinkedHashMap<>();
-    for (SymbolInfo external : providerByPackageCache.computeIfAbsent(pkg, this::resolveExternalByPackage)) {
+    for (SymbolInfo external :
+        providerByPackageCache.computeIfAbsent(pkg, this::resolveExternalByPackage)) {
       out.put(external.getFqName(), external);
     }
-    byFqn.forEach((k, v) -> {
-      if (k.startsWith(prefix)) {
-        out.put(v.getFqName(), v);
-      }
-    });
+    byFqn.forEach(
+        (k, v) -> {
+          if (k.startsWith(prefix)) {
+            out.put(v.getFqName(), v);
+          }
+        });
     return List.copyOf(out.values());
   }
 
@@ -78,7 +81,8 @@ public final class SymbolIndex implements CoreQuery {
       return List.of();
     }
     Map<String, SymbolInfo> results = new LinkedHashMap<>();
-    for (SymbolInfo external : providerBySimpleNameCache.computeIfAbsent(simpleName, this::resolveExternalBySimpleName)) {
+    for (SymbolInfo external :
+        providerBySimpleNameCache.computeIfAbsent(simpleName, this::resolveExternalBySimpleName)) {
       results.put(external.getFqName(), external);
     }
     for (SymbolInfo sym : byFqn.values()) {
@@ -97,7 +101,8 @@ public final class SymbolIndex implements CoreQuery {
       return List.of();
     }
     Map<String, SymbolInfo> results = new LinkedHashMap<>();
-    for (SymbolInfo external : providerByOwnerCache.computeIfAbsent(ownerFqn, this::resolveExternalMembers)) {
+    for (SymbolInfo external :
+        providerByOwnerCache.computeIfAbsent(ownerFqn, this::resolveExternalMembers)) {
       results.put(external.getFqName(), external);
     }
     for (SymbolInfo symbol : byFqn.values()) {
@@ -168,7 +173,8 @@ public final class SymbolIndex implements CoreQuery {
             results.putIfAbsent(symbol.getFqName(), symbol);
           }
         } catch (RuntimeException e) {
-          LOG.log(Level.WARNING, "Symbol provider failed while resolving members for " + ownerFqn, e);
+          LOG.log(
+              Level.WARNING, "Symbol provider failed while resolving members for " + ownerFqn, e);
         }
       }
     }
@@ -182,7 +188,8 @@ public final class SymbolIndex implements CoreQuery {
         try {
           results.addAll(provider.supertypesOf(typeFqn));
         } catch (RuntimeException e) {
-          LOG.log(Level.WARNING, "Symbol provider failed while resolving supertypes for " + typeFqn, e);
+          LOG.log(
+              Level.WARNING, "Symbol provider failed while resolving supertypes for " + typeFqn, e);
         }
       }
     }

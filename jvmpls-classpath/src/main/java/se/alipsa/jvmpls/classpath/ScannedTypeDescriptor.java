@@ -2,13 +2,14 @@ package se.alipsa.jvmpls.classpath;
 
 import se.alipsa.jvmpls.core.model.SymbolInfo;
 
-record ScannedTypeDescriptor(String fqName,
-                             String packageName,
-                             String containerFqName,
-                             SymbolInfo.Kind kind,
-                             String resourceUri,
-                             String superclassFqName,
-                             java.util.List<String> interfaceFqNames) {
+record ScannedTypeDescriptor(
+    String fqName,
+    String packageName,
+    String containerFqName,
+    SymbolInfo.Kind kind,
+    String resourceUri,
+    String superclassFqName,
+    java.util.List<String> interfaceFqNames) {
 
   String simpleName() {
     int lastDot = fqName.lastIndexOf('.');

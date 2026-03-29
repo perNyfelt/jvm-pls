@@ -1,16 +1,17 @@
 package test.alipsa.jvmpls.java;
 
-import org.junit.jupiter.api.Test;
-import se.alipsa.jvmpls.core.model.Location;
-import se.alipsa.jvmpls.core.model.Position;
-import se.alipsa.jvmpls.core.server.CoreServer;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+
+import se.alipsa.jvmpls.core.model.Location;
+import se.alipsa.jvmpls.core.model.Position;
+import se.alipsa.jvmpls.core.server.CoreServer;
 
 class JavaPluginDefinitionTest {
 
@@ -19,31 +20,33 @@ class JavaPluginDefinitionTest {
     Path dir = Files.createTempDirectory("jvmpls-java-def");
 
     Path hello = dir.resolve("Hello.java");
-    String helloCode = """
-      package demo;
-      public class Hello {
-        public void greet() { System.out.println("hi"); }
-      }
-      """;
+    String helloCode =
+        """
+        package demo;
+        public class Hello {
+          public void greet() { System.out.println("hi"); }
+        }
+        """;
     Files.writeString(hello, helloCode, StandardCharsets.UTF_8);
     String helloUri = hello.toUri().toString();
 
     Path main = dir.resolve("Main.java");
-    String mainCode = """
-      package demo;
-      public class Main {
-        public static void main(String[] args) {
-          Hello h = new Hello();
-          h.greet();
+    String mainCode =
+        """
+        package demo;
+        public class Main {
+          public static void main(String[] args) {
+            Hello h = new Hello();
+            h.greet();
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
     try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
       server.openFile(helloUri, helloCode);
-      server.openFile(mainUri,  mainCode);
+      server.openFile(mainUri, mainCode);
 
       // Put cursor on the first "Hello" usage in Main
       Position pos = firstOccurrencePosition(mainCode, "Hello");
@@ -59,13 +62,14 @@ class JavaPluginDefinitionTest {
     Path dir = Files.createTempDirectory("jvmpls-java-jdk-def");
 
     Path main = dir.resolve("Main.java");
-    String mainCode = """
-      package demo;
-      import java.util.List;
-      public class Main {
-        List<String> names;
-      }
-      """;
+    String mainCode =
+        """
+        package demo;
+        import java.util.List;
+        public class Main {
+          List<String> names;
+        }
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
@@ -76,7 +80,8 @@ class JavaPluginDefinitionTest {
       Optional<Location> def = server.definition(mainUri, pos);
 
       assertTrue(def.isPresent(), "definition for external JDK type should be found");
-      assertTrue(def.get().getUri().contains("java/util/List"),
+      assertTrue(
+          def.get().getUri().contains("java/util/List"),
           "definition should point to the binary List class resource");
     }
   }
@@ -87,7 +92,12 @@ class JavaPluginDefinitionTest {
     int line = 0, col = 0;
     for (int i = 0; i < idx; i++) {
       char c = text.charAt(i);
-      if (c == '\n') { line++; col = 0; } else { col++; }
+      if (c == '\n') {
+        line++;
+        col = 0;
+      } else {
+        col++;
+      }
     }
     return new Position(line, col);
   }

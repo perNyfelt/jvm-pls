@@ -1,16 +1,17 @@
 package test.alipsa.jvmpls.core.server;
 
-import org.junit.jupiter.api.Test;
-import se.alipsa.jvmpls.core.model.Location;
-import se.alipsa.jvmpls.core.model.Position;
-import se.alipsa.jvmpls.core.server.CoreServer;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+
+import se.alipsa.jvmpls.core.model.Location;
+import se.alipsa.jvmpls.core.model.Position;
+import se.alipsa.jvmpls.core.server.CoreServer;
 
 class CoreServerDefinitionTest {
 
@@ -19,24 +20,26 @@ class CoreServerDefinitionTest {
     Path dir = Files.createTempDirectory("jvm-pls-def");
     // Define Hello.java (no package for simplicity)
     Path hello = dir.resolve("Hello.java");
-    String helloCode = """
-      public class Hello {
-        void greet() { System.out.println("hi"); }
-      }
-      """;
+    String helloCode =
+        """
+        public class Hello {
+          void greet() { System.out.println("hi"); }
+        }
+        """;
     Files.writeString(hello, helloCode, StandardCharsets.UTF_8);
     String helloUri = hello.toUri().toString();
 
     // Use Hello in Main.java
     Path main = dir.resolve("Main.java");
-    String mainCode = """
-      public class Main {
-        public static void main(String[] args) {
-          Hello h = new Hello();
-          h.greet();
+    String mainCode =
+        """
+        public class Main {
+          public static void main(String[] args) {
+            Hello h = new Hello();
+            h.greet();
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
@@ -54,7 +57,8 @@ class CoreServerDefinitionTest {
     }
   }
 
-  private static void noop(String uri, java.util.List<se.alipsa.jvmpls.core.model.Diagnostic> diags) {
+  private static void noop(
+      String uri, java.util.List<se.alipsa.jvmpls.core.model.Diagnostic> diags) {
     // no-op publisher
   }
 
@@ -64,7 +68,12 @@ class CoreServerDefinitionTest {
     int line = 0, col = 0;
     for (int i = 0; i < idx; i++) {
       char c = text.charAt(i);
-      if (c == '\n') { line++; col = 0; } else { col++; }
+      if (c == '\n') {
+        line++;
+        col = 0;
+      } else {
+        col++;
+      }
     }
     return new Position(line, col);
   }

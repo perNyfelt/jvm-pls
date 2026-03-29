@@ -4,12 +4,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-public record MethodSignature(List<JvmType> parameterTypes,
-                              JvmType returnType,
-                              List<String> parameterNames,
-                              List<String> typeParameters,
-                              List<JvmType> throwsTypes,
-                              Set<String> modifiers) {
+public record MethodSignature(
+    List<JvmType> parameterTypes,
+    JvmType returnType,
+    List<String> parameterNames,
+    List<String> typeParameters,
+    List<JvmType> throwsTypes,
+    Set<String> modifiers) {
 
   public MethodSignature {
     parameterTypes = parameterTypes == null ? List.of() : List.copyOf(parameterTypes);

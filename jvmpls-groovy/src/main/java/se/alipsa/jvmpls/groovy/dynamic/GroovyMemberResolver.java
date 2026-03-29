@@ -1,13 +1,5 @@
 package se.alipsa.jvmpls.groovy.dynamic;
 
-import se.alipsa.jvmpls.core.CoreQuery;
-import se.alipsa.jvmpls.core.model.InferenceConfidence;
-import se.alipsa.jvmpls.core.model.Position;
-import se.alipsa.jvmpls.core.model.SymbolInfo;
-import se.alipsa.jvmpls.core.model.SyntheticOrigin;
-import se.alipsa.jvmpls.core.types.JvmTypes;
-
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -17,6 +9,12 @@ import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
 
+import se.alipsa.jvmpls.core.CoreQuery;
+import se.alipsa.jvmpls.core.model.Position;
+import se.alipsa.jvmpls.core.model.SymbolInfo;
+import se.alipsa.jvmpls.core.model.SyntheticOrigin;
+import se.alipsa.jvmpls.core.types.JvmTypes;
+
 public final class GroovyMemberResolver {
 
   private final CoreQuery core;
@@ -25,11 +23,12 @@ public final class GroovyMemberResolver {
   private final Predicate<String> dynamicMethodType;
   private final Predicate<String> dynamicPropertyType;
 
-  public GroovyMemberResolver(CoreQuery core,
-                              BiFunction<String, Position, List<ScopedSyntheticMember>> scopedMembers,
-                              java.util.function.Function<String, List<String>> supertypes,
-                              Predicate<String> dynamicMethodType,
-                              Predicate<String> dynamicPropertyType) {
+  public GroovyMemberResolver(
+      CoreQuery core,
+      BiFunction<String, Position, List<ScopedSyntheticMember>> scopedMembers,
+      java.util.function.Function<String, List<String>> supertypes,
+      Predicate<String> dynamicMethodType,
+      Predicate<String> dynamicPropertyType) {
     this.core = core;
     this.scopedMembers = scopedMembers;
     this.supertypes = supertypes;
@@ -53,8 +52,12 @@ public final class GroovyMemberResolver {
     return receiverTypeFqn != null && dynamicPropertyType.test(receiverTypeFqn);
   }
 
-  private void collect(String typeFqn, String fileUri, Position position,
-                       Map<String, SymbolInfo> results, Set<String> visited) {
+  private void collect(
+      String typeFqn,
+      String fileUri,
+      Position position,
+      Map<String, SymbolInfo> results,
+      Set<String> visited) {
     if (typeFqn == null || typeFqn.isBlank() || !visited.add(typeFqn)) {
       return;
     }
@@ -92,7 +95,8 @@ public final class GroovyMemberResolver {
   }
 
   private static String methodSignature(SymbolInfo symbol) {
-    return symbol.getMethodSignature() == null ? symbol.getSignature()
+    return symbol.getMethodSignature() == null
+        ? symbol.getSignature()
         : JvmTypes.toLegacyMethodSignature(symbol.getMethodSignature());
   }
 

@@ -4,9 +4,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * File-level dependency graph (very lightweight).
- * fromUri -> set of to URIs or FQNs (you decide what to store).
- * For MVP we only track "fromUri -> toFqn" edges; you can evolve this later.
+ * File-level dependency graph (very lightweight). fromUri -> set of to URIs or FQNs (you decide
+ * what to store). For MVP we only track "fromUri -> toFqn" edges; you can evolve this later.
  */
 public final class DependencyGraph {
 

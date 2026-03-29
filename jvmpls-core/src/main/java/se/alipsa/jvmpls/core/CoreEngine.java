@@ -1,16 +1,16 @@
 package se.alipsa.jvmpls.core;
 
-import se.alipsa.jvmpls.core.model.*;
-import se.alipsa.jvmpls.core.types.JvmType;
-import se.alipsa.jvmpls.core.types.JvmTypes;
-import se.alipsa.jvmpls.core.types.MethodSignature;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import se.alipsa.jvmpls.core.model.*;
+import se.alipsa.jvmpls.core.types.JvmType;
+import se.alipsa.jvmpls.core.types.JvmTypes;
+import se.alipsa.jvmpls.core.types.MethodSignature;
 
 /** Default implementation of CoreFacade. */
 public final class CoreEngine implements CoreFacade {
@@ -25,11 +25,13 @@ public final class CoreEngine implements CoreFacade {
   /** Track which plugin currently owns a given URI. */
   private final Map<String, JvmLangPlugin> pluginByUri = new ConcurrentHashMap<>();
 
-  public CoreEngine(PluginRegistry plugins,
-                    SymbolIndex index,
-                    DocumentStore docs,
-                    DependencyGraph graph,
-                    Executor executor) {
+  @edu.umd.cs.findbugs.annotations.SuppressFBWarnings("EI_EXPOSE_REP2")
+  public CoreEngine(
+      PluginRegistry plugins,
+      SymbolIndex index,
+      DocumentStore docs,
+      DependencyGraph graph,
+      Executor executor) {
     this.plugins = Objects.requireNonNull(plugins);
     this.index = Objects.requireNonNull(index);
     this.docs = Objects.requireNonNull(docs);
@@ -56,7 +58,10 @@ public final class CoreEngine implements CoreFacade {
     graph.removeFile(uri);
     var pl = pluginByUri.remove(uri);
     if (pl != null) {
-      try { pl.forget(uri); } catch (Throwable ignored) {}
+      try {
+        pl.forget(uri);
+      } catch (Throwable ignored) {
+      }
     }
   }
 
@@ -104,12 +109,13 @@ public final class CoreEngine implements CoreFacade {
     if (pluginOpt.isEmpty()) {
       // Clear any stale symbols for this file and report info diagnostic
       index.removeFile(uri);
-      return List.of(new Diagnostic(
-          new Range(new Position(0,0), new Position(0,1)),
-          "No plugin registered to handle " + uri,
-          Diagnostic.Severity.INFORMATION,
-          "core",
-          "no-plugin"));
+      return List.of(
+          new Diagnostic(
+              new Range(new Position(0, 0), new Position(0, 1)),
+              "No plugin registered to handle " + uri,
+              Diagnostic.Severity.INFORMATION,
+              "core",
+              "no-plugin"));
     }
 
     JvmLangPlugin plugin = pluginOpt.get();
@@ -120,89 +126,230 @@ public final class CoreEngine implements CoreFacade {
     try {
       diags = plugin.index(uri, text, reporter);
     } catch (Throwable t) {
-      diags = List.of(new Diagnostic(
-          new Range(new Position(0,0), new Position(0,1)),
-          "Plugin error: " + t.getMessage(),
-          Diagnostic.Severity.ERROR,
-          plugin.id(),
-          "plugin-exception"));
+      diags =
+          List.of(
+              new Diagnostic(
+                  new Range(new Position(0, 0), new Position(0, 1)),
+                  "Plugin error: " + t.getMessage(),
+                  Diagnostic.Severity.ERROR,
+                  plugin.id(),
+                  "plugin-exception"));
     }
     return diags;
   }
 
   private SymbolReporter wrapReporter(String uri, String pluginId) {
     return new SymbolReporter() {
-      @Override public void reportPackage(String pkgFqn, Location loc) {
-        index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.PACKAGE, pkgFqn, "", loc, "", Set.of(), List.of()));
+      @Override
+      public void reportPackage(String pkgFqn, Location loc) {
+        index.put(
+            uri,
+            new SymbolInfo(
+                pluginId, SymbolInfo.Kind.PACKAGE, pkgFqn, "", loc, "", Set.of(), List.of()));
       }
-      @Override public void reportClass(String classFqn, Location loc, boolean isInterface, boolean isEnum, boolean isAnno) {
-        reportClass(classFqn, loc, isInterface, isEnum, isAnno,
-            SyntheticOrigin.NONE, InferenceConfidence.DETERMINISTIC);
+
+      @Override
+      public void reportClass(
+          String classFqn, Location loc, boolean isInterface, boolean isEnum, boolean isAnno) {
+        reportClass(
+            classFqn,
+            loc,
+            isInterface,
+            isEnum,
+            isAnno,
+            SyntheticOrigin.NONE,
+            InferenceConfidence.DETERMINISTIC);
       }
-      @Override public void reportClass(String classFqn, Location loc, boolean isInterface, boolean isEnum, boolean isAnno,
-                                        SyntheticOrigin origin,
-                                        InferenceConfidence confidence) {
-        SymbolInfo.Kind kind = isAnno ? SymbolInfo.Kind.ANNOTATION
-            : isEnum ? SymbolInfo.Kind.ENUM
-            : isInterface ? SymbolInfo.Kind.INTERFACE : SymbolInfo.Kind.CLASS;
-        String container = classFqn.contains(".") ? classFqn.substring(0, classFqn.lastIndexOf('.')) : "";
-        index.put(uri, new SymbolInfo(pluginId, kind, classFqn, container, loc, "", Set.of(), List.of(),
-            null, null, origin, confidence));
+
+      @Override
+      public void reportClass(
+          String classFqn,
+          Location loc,
+          boolean isInterface,
+          boolean isEnum,
+          boolean isAnno,
+          SyntheticOrigin origin,
+          InferenceConfidence confidence) {
+        SymbolInfo.Kind kind =
+            isAnno
+                ? SymbolInfo.Kind.ANNOTATION
+                : isEnum
+                    ? SymbolInfo.Kind.ENUM
+                    : isInterface ? SymbolInfo.Kind.INTERFACE : SymbolInfo.Kind.CLASS;
+        String container =
+            classFqn.contains(".") ? classFqn.substring(0, classFqn.lastIndexOf('.')) : "";
+        index.put(
+            uri,
+            new SymbolInfo(
+                pluginId,
+                kind,
+                classFqn,
+                container,
+                loc,
+                "",
+                Set.of(),
+                List.of(),
+                null,
+                null,
+                origin,
+                confidence));
       }
-      @Override public void reportMethod(String ownerClassFqn, String methodName, String signature, Location loc) {
+
+      @Override
+      public void reportMethod(
+          String ownerClassFqn, String methodName, String signature, Location loc) {
         MethodSignature typed = JvmTypes.fromLegacyMethodSignature(signature, Set.of());
         reportMethod(ownerClassFqn, methodName, typed, loc, Set.of());
       }
-      @Override public void reportField(String ownerClassFqn, String fieldName, String typeFqn, Location loc) {
+
+      @Override
+      public void reportField(
+          String ownerClassFqn, String fieldName, String typeFqn, Location loc) {
         JvmType typed = JvmTypes.fromSource(typeFqn, Function.identity());
         reportField(ownerClassFqn, fieldName, typed, loc, Set.of());
       }
-      @Override public void reportAnnotation(String annotationFqn, Location loc) {
-        index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.ANNOTATION, annotationFqn, "", loc, "", Set.of(), List.of()));
+
+      @Override
+      public void reportAnnotation(String annotationFqn, Location loc) {
+        index.put(
+            uri,
+            new SymbolInfo(
+                pluginId,
+                SymbolInfo.Kind.ANNOTATION,
+                annotationFqn,
+                "",
+                loc,
+                "",
+                Set.of(),
+                List.of()));
       }
-      @Override public void reportMethod(String ownerClassFqn, String methodName, MethodSignature signature,
-                                         Location loc, Set<String> modifiers) {
-        reportMethod(ownerClassFqn, methodName, signature, loc, modifiers,
-            SyntheticOrigin.NONE, InferenceConfidence.DETERMINISTIC);
+
+      @Override
+      public void reportMethod(
+          String ownerClassFqn,
+          String methodName,
+          MethodSignature signature,
+          Location loc,
+          Set<String> modifiers) {
+        reportMethod(
+            ownerClassFqn,
+            methodName,
+            signature,
+            loc,
+            modifiers,
+            SyntheticOrigin.NONE,
+            InferenceConfidence.DETERMINISTIC);
       }
-      @Override public void reportMethod(String ownerClassFqn, String methodName, MethodSignature signature,
-                                         Location loc, Set<String> modifiers,
-                                         SyntheticOrigin origin,
-                                         InferenceConfidence confidence) {
+
+      @Override
+      public void reportMethod(
+          String ownerClassFqn,
+          String methodName,
+          MethodSignature signature,
+          Location loc,
+          Set<String> modifiers,
+          SyntheticOrigin origin,
+          InferenceConfidence confidence) {
         String legacySignature = JvmTypes.toLegacyMethodSignature(signature);
         String fqn = ownerClassFqn + "#" + methodName + legacySignature;
-        index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.METHOD, fqn, ownerClassFqn, loc,
-            legacySignature, modifiers, signature.typeParameters(), null, signature,
-            origin, confidence));
+        index.put(
+            uri,
+            new SymbolInfo(
+                pluginId,
+                SymbolInfo.Kind.METHOD,
+                fqn,
+                ownerClassFqn,
+                loc,
+                legacySignature,
+                modifiers,
+                signature.typeParameters(),
+                null,
+                signature,
+                origin,
+                confidence));
       }
-      @Override public void reportConstructor(String ownerClassFqn, MethodSignature signature,
-                                              Location loc, Set<String> modifiers) {
-        reportConstructor(ownerClassFqn, signature, loc, modifiers,
-            SyntheticOrigin.NONE, InferenceConfidence.DETERMINISTIC);
+
+      @Override
+      public void reportConstructor(
+          String ownerClassFqn, MethodSignature signature, Location loc, Set<String> modifiers) {
+        reportConstructor(
+            ownerClassFqn,
+            signature,
+            loc,
+            modifiers,
+            SyntheticOrigin.NONE,
+            InferenceConfidence.DETERMINISTIC);
       }
-      @Override public void reportConstructor(String ownerClassFqn, MethodSignature signature,
-                                              Location loc, Set<String> modifiers,
-                                              SyntheticOrigin origin,
-                                              InferenceConfidence confidence) {
+
+      @Override
+      public void reportConstructor(
+          String ownerClassFqn,
+          MethodSignature signature,
+          Location loc,
+          Set<String> modifiers,
+          SyntheticOrigin origin,
+          InferenceConfidence confidence) {
         String legacySignature = JvmTypes.toLegacyMethodSignature(signature);
         String fqn = ownerClassFqn + "#<init>" + legacySignature;
-        index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.CONSTRUCTOR, fqn, ownerClassFqn, loc,
-            legacySignature, modifiers, signature.typeParameters(), null, signature,
-            origin, confidence));
+        index.put(
+            uri,
+            new SymbolInfo(
+                pluginId,
+                SymbolInfo.Kind.CONSTRUCTOR,
+                fqn,
+                ownerClassFqn,
+                loc,
+                legacySignature,
+                modifiers,
+                signature.typeParameters(),
+                null,
+                signature,
+                origin,
+                confidence));
       }
-      @Override public void reportField(String ownerClassFqn, String fieldName, JvmType type,
-                                        Location loc, Set<String> modifiers) {
-        reportField(ownerClassFqn, fieldName, type, loc, modifiers,
-            SyntheticOrigin.NONE, InferenceConfidence.DETERMINISTIC);
+
+      @Override
+      public void reportField(
+          String ownerClassFqn,
+          String fieldName,
+          JvmType type,
+          Location loc,
+          Set<String> modifiers) {
+        reportField(
+            ownerClassFqn,
+            fieldName,
+            type,
+            loc,
+            modifiers,
+            SyntheticOrigin.NONE,
+            InferenceConfidence.DETERMINISTIC);
       }
-      @Override public void reportField(String ownerClassFqn, String fieldName, JvmType type,
-                                        Location loc, Set<String> modifiers,
-                                        SyntheticOrigin origin,
-                                        InferenceConfidence confidence) {
+
+      @Override
+      public void reportField(
+          String ownerClassFqn,
+          String fieldName,
+          JvmType type,
+          Location loc,
+          Set<String> modifiers,
+          SyntheticOrigin origin,
+          InferenceConfidence confidence) {
         String fqn = ownerClassFqn + "." + fieldName;
-        index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.FIELD, fqn, ownerClassFqn, loc,
-            type.displayName(), modifiers, List.of(), type, null,
-            origin, confidence));
+        index.put(
+            uri,
+            new SymbolInfo(
+                pluginId,
+                SymbolInfo.Kind.FIELD,
+                fqn,
+                ownerClassFqn,
+                loc,
+                type.displayName(),
+                modifiers,
+                List.of(),
+                type,
+                null,
+                origin,
+                confidence));
       }
     };
   }

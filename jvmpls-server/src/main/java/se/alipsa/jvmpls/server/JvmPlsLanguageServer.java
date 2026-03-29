@@ -1,13 +1,5 @@
 package se.alipsa.jvmpls.server;
 
-import org.eclipse.lsp4j.*;
-import org.eclipse.lsp4j.services.*;
-import se.alipsa.jvmpls.build.BuildToolRegistry;
-import se.alipsa.jvmpls.core.CoreFacade;
-import se.alipsa.jvmpls.core.model.Diagnostic;
-import se.alipsa.jvmpls.core.server.CoreServer;
-import se.alipsa.jvmpls.core.server.DiagnosticsPublisher;
-
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -16,11 +8,20 @@ import java.util.function.IntConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.services.*;
+
+import se.alipsa.jvmpls.build.BuildToolRegistry;
+import se.alipsa.jvmpls.core.CoreFacade;
+import se.alipsa.jvmpls.core.model.Diagnostic;
+import se.alipsa.jvmpls.core.server.CoreServer;
+import se.alipsa.jvmpls.core.server.DiagnosticsPublisher;
+
 /**
- * Main LSP4J {@link LanguageServer} implementation.
- * Handles initialize/shutdown/exit lifecycle and wires up the services.
+ * Main LSP4J {@link LanguageServer} implementation. Handles initialize/shutdown/exit lifecycle and
+ * wires up the services.
  */
-public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware {
+public final class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware {
 
   private static final Logger LOG = Logger.getLogger(JvmPlsLanguageServer.class.getName());
 
@@ -38,10 +39,11 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
   }
 
   /**
-   * Visible for tests and embeddings that provide a non-publishing {@link CoreFacade}.
-   * Do not pass {@link CoreServer}; it already owns diagnostics publishing.
+   * Visible for tests and embeddings that provide a non-publishing {@link CoreFacade}. Do not pass
+   * {@link CoreServer}; it already owns diagnostics publishing.
    */
-  public JvmPlsLanguageServer(CoreFacade core, AutoCloseable coreLifecycle, IntConsumer processExit) {
+  public JvmPlsLanguageServer(
+      CoreFacade core, AutoCloseable coreLifecycle, IntConsumer processExit) {
     CoreFacade safeCore = Objects.requireNonNull(core, "core");
     if (safeCore instanceof CoreServer) {
       throw new IllegalArgumentException(
@@ -51,37 +53,44 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
     this.coreFacade = new ReloadableCoreFacade();
     CoreFacade publishingCore = publishDiagnosticsFrom(safeCore, diagnosticsPublisher);
     try {
-      this.coreFacade.install(publishingCore, Objects.requireNonNull(coreLifecycle, "coreLifecycle"),
+      this.coreFacade.install(
+          publishingCore,
+          Objects.requireNonNull(coreLifecycle, "coreLifecycle"),
           "Injected core is ready");
     } catch (Exception e) {
       throw new IllegalStateException("Failed to install injected core", e);
     }
     OpenDocuments openDocuments = new OpenDocuments();
     this.workspaceManager = null;
-    this.textDocumentService = new JvmPlsTextDocumentService(
-        coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
-    this.workspaceService = new JvmPlsWorkspaceService(this::acceptingRequests, ignored -> { }, ignored -> { });
+    this.textDocumentService =
+        new JvmPlsTextDocumentService(
+            coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
+    this.workspaceService =
+        new JvmPlsWorkspaceService(this::acceptingRequests, ignored -> {}, ignored -> {});
     this.processExit = Objects.requireNonNull(processExit, "processExit");
   }
 
-  private JvmPlsLanguageServer(ClientDiagnosticsPublisher diagnosticsPublisher,
-                               IntConsumer processExit) {
+  private JvmPlsLanguageServer(
+      ClientDiagnosticsPublisher diagnosticsPublisher, IntConsumer processExit) {
     this.diagnosticsPublisher = diagnosticsPublisher;
     this.coreFacade = new ReloadableCoreFacade();
     OpenDocuments openDocuments = new OpenDocuments();
-    this.workspaceManager = new WorkspaceManager(
-        BuildToolRegistry.createDefault(),
-        new WorkspaceCoreFactory(),
-        coreFacade,
-        openDocuments,
-        diagnosticsPublisher,
-        diagnosticsPublisher::showWarning);
-    this.textDocumentService = new JvmPlsTextDocumentService(
-        coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
-    this.workspaceService = new JvmPlsWorkspaceService(
-        this::acceptingRequests,
-        settings -> workspaceManager.didChangeConfiguration(settings),
-        params -> workspaceManager.didChangeWatchedFiles(params));
+    this.workspaceManager =
+        new WorkspaceManager(
+            BuildToolRegistry.createDefault(),
+            new WorkspaceCoreFactory(),
+            coreFacade,
+            openDocuments,
+            diagnosticsPublisher,
+            diagnosticsPublisher::showWarning);
+    this.textDocumentService =
+        new JvmPlsTextDocumentService(
+            coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
+    this.workspaceService =
+        new JvmPlsWorkspaceService(
+            this::acceptingRequests,
+            settings -> workspaceManager.didChangeConfiguration(settings),
+            params -> workspaceManager.didChangeWatchedFiles(params));
     this.processExit = Objects.requireNonNull(processExit, "processExit");
   }
 
@@ -155,8 +164,8 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
     return !shutdownRequested;
   }
 
-  private static CoreFacade publishDiagnosticsFrom(CoreFacade delegate,
-                                                   DiagnosticsPublisher diagnosticsPublisher) {
+  private static CoreFacade publishDiagnosticsFrom(
+      CoreFacade delegate, DiagnosticsPublisher diagnosticsPublisher) {
     return new CoreFacade() {
       @Override
       public List<Diagnostic> openFile(String uri, String text) {
@@ -212,13 +221,18 @@ public class JvmPlsLanguageServer implements LanguageServer, LanguageClientAware
       LanguageClient currentClient = client;
       int count = diagnostics == null ? 0 : diagnostics.size();
       if (currentClient == null) {
-        LOG.warning("Dropping " + count + " diagnostics for " + uri
-            + " because no language client is connected");
+        LOG.warning(
+            "Dropping "
+                + count
+                + " diagnostics for "
+                + uri
+                + " because no language client is connected");
         return;
       }
       try {
         List<se.alipsa.jvmpls.core.model.Diagnostic> safeDiagnostics =
-            diagnostics != null ? diagnostics
+            diagnostics != null
+                ? diagnostics
                 : Collections.<se.alipsa.jvmpls.core.model.Diagnostic>emptyList();
         currentClient.publishDiagnostics(
             new PublishDiagnosticsParams(uri, LspTypeConverter.toLspDiagnostics(safeDiagnostics)));

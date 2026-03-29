@@ -17,6 +17,5 @@ public final class GroovyAnnotations {
   public static final String COMMONS = "groovy.util.logging.Commons";
   public static final String SLF4J = "groovy.util.logging.Slf4j";
 
-  private GroovyAnnotations() {
-  }
+  private GroovyAnnotations() {}
 }

@@ -1,15 +1,16 @@
 package test.alipsa.jvmpls.groovy;
 
-import org.junit.jupiter.api.Test;
-import se.alipsa.jvmpls.core.model.Diagnostic;
-import se.alipsa.jvmpls.core.server.CoreServer;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+
+import se.alipsa.jvmpls.core.model.Diagnostic;
+import se.alipsa.jvmpls.core.server.CoreServer;
 
 class GroovyPluginSmokeTest {
 
@@ -17,10 +18,11 @@ class GroovyPluginSmokeTest {
   void openFile_indexesWithoutDiagnostics() throws Exception {
     Path dir = Files.createTempDirectory("jvmpls-groovy-smoke");
     Path file = dir.resolve("Hello.groovy");
-    String code = """
-      package demo
-      class Hello { def greet() { println 'hi' } }
-      """;
+    String code =
+        """
+        package demo
+        class Hello { def greet() { println 'hi' } }
+        """;
     Files.writeString(file, code, StandardCharsets.UTF_8);
     String uri = file.toUri().toString();
 

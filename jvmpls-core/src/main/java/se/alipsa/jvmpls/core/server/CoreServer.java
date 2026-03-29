@@ -1,8 +1,5 @@
 package se.alipsa.jvmpls.core.server;
 
-import se.alipsa.jvmpls.core.*;
-import se.alipsa.jvmpls.core.model.*;
-
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -12,10 +9,12 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import se.alipsa.jvmpls.core.*;
+import se.alipsa.jvmpls.core.model.*;
+
 /**
- * In-process server façade for super-fast local usage.
- * - Delegates to CoreEngine
- * - Publishes diagnostics via DiagnosticsPublisher
+ * In-process server façade for super-fast local usage. - Delegates to CoreEngine - Publishes
+ * diagnostics via DiagnosticsPublisher
  */
 public final class CoreServer implements CoreFacade, AutoCloseable {
 
@@ -26,7 +25,8 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
   private final Executor executor;
   private final boolean ownsExecutor;
 
-  private CoreServer(CoreEngine engine, DiagnosticsPublisher publisher, Executor executor, boolean ownsExecutor) {
+  private CoreServer(
+      CoreEngine engine, DiagnosticsPublisher publisher, Executor executor, boolean ownsExecutor) {
     this.engine = Objects.requireNonNull(engine);
     this.publisher = Objects.requireNonNullElse(publisher, DiagnosticsPublisher.NO_OP);
     this.executor = executor;
@@ -38,10 +38,11 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
     return createDefault(publisher, List.of(), currentJdkHome());
   }
 
-  /** Build a CoreServer with explicit classpath/JDK configuration for external symbol resolution. */
-  public static CoreServer createDefault(DiagnosticsPublisher publisher,
-                                         List<String> classpath,
-                                         Path targetJdkHome) {
+  /**
+   * Build a CoreServer with explicit classpath/JDK configuration for external symbol resolution.
+   */
+  public static CoreServer createDefault(
+      DiagnosticsPublisher publisher, List<String> classpath, Path targetJdkHome) {
     SymbolIndex index = new SymbolIndex();
     DocumentStore docs = new DocumentStore();
     DependencyGraph graph = new DependencyGraph();
@@ -56,26 +57,29 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
     return new CoreServer(engine, publisher, executor, owns);
   }
 
-  /** Advanced factory in case you want to supply your own pieces (tests, custom exec/logging, etc.). */
-  public static CoreServer create(PluginRegistry registry,
-                                  SymbolIndex index,
-                                  DocumentStore docs,
-                                  DependencyGraph graph,
-                                  Executor executor,
-                                  DiagnosticsPublisher publisher) {
+  /**
+   * Advanced factory in case you want to supply your own pieces (tests, custom exec/logging, etc.).
+   */
+  public static CoreServer create(
+      PluginRegistry registry,
+      SymbolIndex index,
+      DocumentStore docs,
+      DependencyGraph graph,
+      Executor executor,
+      DiagnosticsPublisher publisher) {
     return create(registry, index, docs, graph, executor, List.of(), currentJdkHome(), publisher);
   }
 
-  public static CoreServer create(PluginRegistry registry,
-                                  SymbolIndex index,
-                                  DocumentStore docs,
-                                  DependencyGraph graph,
-                                  Executor executor,
-                                  List<String> classpath,
-                                  Path targetJdkHome,
-                                  DiagnosticsPublisher publisher) {
+  public static CoreServer create(
+      PluginRegistry registry,
+      SymbolIndex index,
+      DocumentStore docs,
+      DependencyGraph graph,
+      Executor executor,
+      List<String> classpath,
+      Path targetJdkHome,
+      DiagnosticsPublisher publisher) {
     registerExternalProviders(index, classpath, targetJdkHome);
-    PluginEnvironment env = new DefaultPluginEnvironment(index, executor, classpath);
     CoreEngine engine = new CoreEngine(registry, index, docs, graph, executor);
     return new CoreServer(engine, publisher, executor, false);
   }
@@ -128,9 +132,8 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
     }
   }
 
-  private static void registerExternalProviders(SymbolIndex index,
-                                                List<String> classpath,
-                                                Path targetJdkHome) {
+  private static void registerExternalProviders(
+      SymbolIndex index, List<String> classpath, Path targetJdkHome) {
     SymbolProviderContext context = new SymbolProviderContext(classpath, targetJdkHome);
     ServiceLoader<SymbolProviderFactory> loader = ServiceLoader.load(SymbolProviderFactory.class);
     for (SymbolProviderFactory factory : loader) {

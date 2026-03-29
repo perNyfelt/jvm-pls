@@ -19,20 +19,19 @@ final class TestLogCapture implements AutoCloseable {
     this.logger = logger;
     this.useParentHandlers = logger.getUseParentHandlers();
     this.level = logger.getLevel();
-    this.handler = new Handler() {
-      @Override
-      public void publish(LogRecord record) {
-        records.add(record);
-      }
+    this.handler =
+        new Handler() {
+          @Override
+          public void publish(LogRecord record) {
+            records.add(record);
+          }
 
-      @Override
-      public void flush() {
-      }
+          @Override
+          public void flush() {}
 
-      @Override
-      public void close() {
-      }
-    };
+          @Override
+          public void close() {}
+        };
     this.handler.setLevel(Level.ALL);
     logger.setUseParentHandlers(false);
     logger.setLevel(Level.ALL);
@@ -48,10 +47,12 @@ final class TestLogCapture implements AutoCloseable {
   }
 
   boolean contains(Level level, String text) {
-    return records.stream().anyMatch(record ->
-        record.getLevel().equals(level)
-            && record.getMessage() != null
-            && record.getMessage().contains(text));
+    return records.stream()
+        .anyMatch(
+            record ->
+                record.getLevel().equals(level)
+                    && record.getMessage() != null
+                    && record.getMessage().contains(text));
   }
 
   @Override

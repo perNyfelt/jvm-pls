@@ -1,16 +1,17 @@
 package test.alipsa.jvmpls.groovy;
 
-import org.junit.jupiter.api.Test;
-import se.alipsa.jvmpls.core.model.Location;
-import se.alipsa.jvmpls.core.model.Position;
-import se.alipsa.jvmpls.core.server.CoreServer;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+
+import se.alipsa.jvmpls.core.model.Location;
+import se.alipsa.jvmpls.core.model.Position;
+import se.alipsa.jvmpls.core.server.CoreServer;
 
 class GroovyPluginDefinitionTest {
 
@@ -19,31 +20,33 @@ class GroovyPluginDefinitionTest {
     Path dir = Files.createTempDirectory("jvmpls-groovy-def");
 
     Path hello = dir.resolve("Hello.groovy");
-    String helloCode = """
-      package demo
-      class Hello {
-        def greet() { println 'hi' }
-      }
-      """;
+    String helloCode =
+        """
+        package demo
+        class Hello {
+          def greet() { println 'hi' }
+        }
+        """;
     Files.writeString(hello, helloCode, StandardCharsets.UTF_8);
     String helloUri = hello.toUri().toString();
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
-      class Main {
-        static void main(String[] args) {
-          Hello h = new Hello()
-          h.greet()
+    String mainCode =
+        """
+        package demo
+        class Main {
+          static void main(String[] args) {
+            Hello h = new Hello()
+            h.greet()
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
     try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
       server.openFile(helloUri, helloCode);
-      server.openFile(mainUri,  mainCode);
+      server.openFile(mainUri, mainCode);
 
       Position pos = firstOccurrencePosition(mainCode, "Hello");
       Optional<Location> def = server.definition(mainUri, pos);
@@ -58,13 +61,14 @@ class GroovyPluginDefinitionTest {
     Path dir = Files.createTempDirectory("jvmpls-groovy-jdk-def");
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
-      import java.util.List
-      class Main {
-        List names = []
-      }
-      """;
+    String mainCode =
+        """
+        package demo
+        import java.util.List
+        class Main {
+          List names = []
+        }
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
@@ -75,7 +79,8 @@ class GroovyPluginDefinitionTest {
       Optional<Location> def = server.definition(mainUri, pos);
 
       assertTrue(def.isPresent(), "definition for external JDK type should be found");
-      assertTrue(def.get().getUri().contains("java/util/List"),
+      assertTrue(
+          def.get().getUri().contains("java/util/List"),
           "definition should point to the binary List class resource");
     }
   }
@@ -85,49 +90,51 @@ class GroovyPluginDefinitionTest {
     Path dir = Files.createTempDirectory("jvmpls-groovy-dynamic-def");
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
-      import groovy.lang.Mixin
+    String mainCode =
+        """
+        package demo
+        import groovy.lang.Mixin
 
-      class Thing {}
-      Thing.metaClass.bar = { -> 1 }
+        class Thing {}
+        Thing.metaClass.bar = { -> 1 }
 
-      class Extra {
-        String extra() { "x" }
-      }
+        class Extra {
+          String extra() { "x" }
+        }
 
-      class FirstCategory {
-        static String alpha(String self) { self + "a" }
-      }
+        class FirstCategory {
+          static String alpha(String self) { self + "a" }
+        }
 
-      class SecondCategory {
-        static String beta(String self) { self + "b" }
-      }
+        class SecondCategory {
+          static String beta(String self) { self + "b" }
+        }
 
-      @Mixin(Extra)
-      class Mixed {}
+        @Mixin(Extra)
+        class Mixed {}
 
-      class Main {
-        Thing thing = new Thing()
-        Mixed mixed = new Mixed()
-        String value = "x"
+        class Main {
+          Thing thing = new Thing()
+          Mixed mixed = new Mixed()
+          String value = "x"
 
-        void run() {
-          thing.bar()
-          mixed.extra()
-          use(FirstCategory, SecondCategory) {
-            value.beta()
+          void run() {
+            thing.bar()
+            mixed.extra()
+            use(FirstCategory, SecondCategory) {
+              value.beta()
+            }
           }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
     try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
       server.openFile(mainUri, mainCode);
 
-      Optional<Location> metaDef = server.definition(mainUri, nthOccurrencePosition(mainCode, "bar", 2));
+      Optional<Location> metaDef =
+          server.definition(mainUri, nthOccurrencePosition(mainCode, "bar", 2));
       assertTrue(metaDef.isPresent(), "metaClass member definition should resolve");
       assertEquals(mainUri, metaDef.get().getUri());
     }
@@ -139,7 +146,12 @@ class GroovyPluginDefinitionTest {
     int line = 0, col = 0;
     for (int i = 0; i < idx; i++) {
       char c = text.charAt(i);
-      if (c == '\n') { line++; col = 0; } else { col++; }
+      if (c == '\n') {
+        line++;
+        col = 0;
+      } else {
+        col++;
+      }
     }
     return new Position(line, col);
   }
@@ -155,7 +167,12 @@ class GroovyPluginDefinitionTest {
     int line = 0, col = 0;
     for (int i = 0; i < idx; i++) {
       char c = text.charAt(i);
-      if (c == '\n') { line++; col = 0; } else { col++; }
+      if (c == '\n') {
+        line++;
+        col = 0;
+      } else {
+        col++;
+      }
     }
     return new Position(line, col);
   }

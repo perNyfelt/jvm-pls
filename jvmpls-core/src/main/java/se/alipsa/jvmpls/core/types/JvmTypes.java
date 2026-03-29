@@ -8,8 +8,7 @@ import java.util.stream.Collectors;
 
 public final class JvmTypes {
 
-  private JvmTypes() {
-  }
+  private JvmTypes() {}
 
   public static JvmType fromSource(String rawType, Function<String, String> classNameResolver) {
     if (rawType == null || rawType.isBlank()) {
@@ -32,11 +31,13 @@ public final class JvmTypes {
       return new WildcardType(WildcardType.Variance.UNBOUNDED, null);
     }
     if (value.startsWith("? extends ")) {
-      return new WildcardType(WildcardType.Variance.EXTENDS,
+      return new WildcardType(
+          WildcardType.Variance.EXTENDS,
           fromSource(value.substring("? extends ".length()), classNameResolver));
     }
     if (value.startsWith("? super ")) {
-      return new WildcardType(WildcardType.Variance.SUPER,
+      return new WildcardType(
+          WildcardType.Variance.SUPER,
           fromSource(value.substring("? super ".length()), classNameResolver));
     }
 
@@ -44,9 +45,9 @@ public final class JvmTypes {
     if (genericStart >= 0 && value.endsWith(">")) {
       String base = value.substring(0, genericStart).trim();
       String rawArgs = value.substring(genericStart + 1, value.length() - 1);
-      return new ClassType(resolveClassName(base, classNameResolver), splitTopLevel(rawArgs).stream()
-          .map(arg -> fromSource(arg, classNameResolver))
-          .toList());
+      return new ClassType(
+          resolveClassName(base, classNameResolver),
+          splitTopLevel(rawArgs).stream().map(arg -> fromSource(arg, classNameResolver)).toList());
     }
 
     if (looksLikeTypeVariable(value)) {
@@ -63,32 +64,39 @@ public final class JvmTypes {
     return parseDescriptorType(cursor);
   }
 
-  public static MethodSignature fromLegacyMethodSignature(String legacySignature, Set<String> modifiers) {
+  public static MethodSignature fromLegacyMethodSignature(
+      String legacySignature, Set<String> modifiers) {
     if (legacySignature == null || legacySignature.isBlank()) {
-      return new MethodSignature(List.of(), VoidType.INSTANCE, List.of(), List.of(), List.of(), modifiers);
+      return new MethodSignature(
+          List.of(), VoidType.INSTANCE, List.of(), List.of(), List.of(), modifiers);
     }
     int open = legacySignature.indexOf('(');
     int close = legacySignature.indexOf(')', open + 1);
     if (open < 0 || close < 0) {
-      return new MethodSignature(List.of(), DynamicType.INSTANCE, List.of(), List.of(), List.of(), modifiers);
+      return new MethodSignature(
+          List.of(), DynamicType.INSTANCE, List.of(), List.of(), List.of(), modifiers);
     }
     String rawParams = legacySignature.substring(open + 1, close).trim();
     String rawReturn = legacySignature.substring(close + 1).trim();
-    List<JvmType> params = rawParams.isEmpty() ? List.of() : splitTopLevel(rawParams).stream()
-        .map(arg -> fromSource(arg, Function.identity()))
-        .toList();
-    JvmType returnType = rawReturn.isEmpty()
-        ? VoidType.INSTANCE
-        : fromSource(rawReturn, Function.identity());
+    List<JvmType> params =
+        rawParams.isEmpty()
+            ? List.of()
+            : splitTopLevel(rawParams).stream()
+                .map(arg -> fromSource(arg, Function.identity()))
+                .toList();
+    JvmType returnType =
+        rawReturn.isEmpty() ? VoidType.INSTANCE : fromSource(rawReturn, Function.identity());
     return new MethodSignature(params, returnType, List.of(), List.of(), List.of(), modifiers);
   }
 
-  public static MethodSignature fromMethodDescriptor(String descriptor,
-                                                     List<String> parameterNames,
-                                                     List<String> throwsTypeNames,
-                                                     Set<String> modifiers) {
+  public static MethodSignature fromMethodDescriptor(
+      String descriptor,
+      List<String> parameterNames,
+      List<String> throwsTypeNames,
+      Set<String> modifiers) {
     if (descriptor == null || descriptor.isBlank() || descriptor.charAt(0) != '(') {
-      return new MethodSignature(List.of(), DynamicType.INSTANCE, parameterNames, List.of(), List.of(), modifiers);
+      return new MethodSignature(
+          List.of(), DynamicType.INSTANCE, parameterNames, List.of(), List.of(), modifiers);
     }
     DescriptorCursor cursor = new DescriptorCursor(descriptor);
     cursor.expect('(');
@@ -98,17 +106,23 @@ public final class JvmTypes {
     }
     cursor.expect(')');
     JvmType returnType = parseDescriptorType(cursor);
-    List<JvmType> throwsTypes = throwsTypeNames == null ? List.of() : throwsTypeNames.stream()
-        .<JvmType>map(name -> new ClassType(name, List.of()))
-        .toList();
-    return new MethodSignature(params, returnType,
-        parameterNames, List.of(), throwsTypes, modifiers);
+    List<JvmType> throwsTypes =
+        throwsTypeNames == null
+            ? List.of()
+            : throwsTypeNames.stream()
+                .<JvmType>map(name -> new ClassType(name, List.of()))
+                .toList();
+    return new MethodSignature(
+        params, returnType, parameterNames, List.of(), throwsTypes, modifiers);
   }
 
   public static String toLegacyMethodSignature(MethodSignature signature) {
-    return "(" + signature.parameterTypes().stream()
-        .map(JvmType::displayName)
-        .collect(Collectors.joining(",")) + ")" + signature.returnType().displayName();
+    return "("
+        + signature.parameterTypes().stream()
+            .map(JvmType::displayName)
+            .collect(Collectors.joining(","))
+        + ")"
+        + signature.returnType().displayName();
   }
 
   public static String simpleName(String fqName) {
@@ -127,7 +141,8 @@ public final class JvmTypes {
     return value.length() == 1 && Character.isUpperCase(value.charAt(0));
   }
 
-  private static String resolveClassName(String rawName, Function<String, String> classNameResolver) {
+  private static String resolveClassName(
+      String rawName, Function<String, String> classNameResolver) {
     if (rawName.contains(".")) {
       return rawName;
     }

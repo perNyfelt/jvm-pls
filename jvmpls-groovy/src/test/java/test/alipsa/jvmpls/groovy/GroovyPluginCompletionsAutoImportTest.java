@@ -1,17 +1,18 @@
 package test.alipsa.jvmpls.groovy;
 
-import org.junit.jupiter.api.Test;
-import se.alipsa.jvmpls.core.model.CompletionItem;
-import se.alipsa.jvmpls.core.model.Position;
-import se.alipsa.jvmpls.core.model.TextEdit;
-import se.alipsa.jvmpls.core.server.CoreServer;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+
+import se.alipsa.jvmpls.core.model.CompletionItem;
+import se.alipsa.jvmpls.core.model.Position;
+import se.alipsa.jvmpls.core.model.TextEdit;
+import se.alipsa.jvmpls.core.server.CoreServer;
 
 class GroovyPluginCompletionsAutoImportTest {
 
@@ -26,20 +27,21 @@ class GroovyPluginCompletionsAutoImportTest {
 
     // No imports yet; typing thing.Ba<caret>
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
-      class Main {
-        static void run() {
-          thing.Ba/*caret*/
+    String mainCode =
+        """
+        package demo
+        class Main {
+          static void run() {
+            thing.Ba/*caret*/
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
     try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
       server.openFile(bananaUri, bananaCode);
-      server.openFile(mainUri,   mainCode);
+      server.openFile(mainUri, mainCode);
 
       Position pos = positionAtMarker(mainCode, "/*caret*/");
       List<CompletionItem> items = server.completions(mainUri, pos);
@@ -51,7 +53,8 @@ class GroovyPluginCompletionsAutoImportTest {
       assertNotNull(edits, "additionalTextEdits should not be null");
       assertFalse(edits.isEmpty(), "Expected an auto-import edit for 'import thing.Banana'");
       String combined = edits.stream().map(TextEdit::getNewText).reduce("", String::concat);
-      assertTrue(combined.contains("import thing.Banana"),
+      assertTrue(
+          combined.contains("import thing.Banana"),
           "Auto-import should insert: import thing.Banana");
       assertFalse(combined.contains(";"), "Groovy import should have no semicolon");
     }
@@ -67,28 +70,30 @@ class GroovyPluginCompletionsAutoImportTest {
     String bananaUri = banana.toUri().toString();
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
-      import thing.Banana
-      class Main {
-        static void run() {
-          Ba/*caret*/
+    String mainCode =
+        """
+        package demo
+        import thing.Banana
+        class Main {
+          static void run() {
+            Ba/*caret*/
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
     try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
       server.openFile(bananaUri, bananaCode);
-      server.openFile(mainUri,   mainCode);
+      server.openFile(mainUri, mainCode);
 
       Position pos = positionAtMarker(mainCode, "/*caret*/");
       List<CompletionItem> items = server.completions(mainUri, pos);
 
       CompletionItem bananaItem = byLabel(items, "Banana");
       assertNotNull(bananaItem, "Expected 'Banana' from single-type import");
-      assertTrue(bananaItem.getAdditionalTextEdits() == null
+      assertTrue(
+          bananaItem.getAdditionalTextEdits() == null
               || bananaItem.getAdditionalTextEdits().isEmpty(),
           "No auto-import edits expected when already imported.");
     }
@@ -110,7 +115,12 @@ class GroovyPluginCompletionsAutoImportTest {
     int line = 0, col = 0;
     for (int i = 0; i < idx; i++) {
       char c = text.charAt(i);
-      if (c == '\n') { line++; col = 0; } else { col++; }
+      if (c == '\n') {
+        line++;
+        col = 0;
+      } else {
+        col++;
+      }
     }
     return new Position(line, col);
   }

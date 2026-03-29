@@ -1,11 +1,5 @@
 package se.alipsa.jvmpls.server;
 
-import se.alipsa.jvmpls.core.CoreFacade;
-import se.alipsa.jvmpls.core.model.CompletionItem;
-import se.alipsa.jvmpls.core.model.Diagnostic;
-import se.alipsa.jvmpls.core.model.Location;
-import se.alipsa.jvmpls.core.model.Position;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -13,13 +7,20 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import se.alipsa.jvmpls.core.CoreFacade;
+import se.alipsa.jvmpls.core.model.CompletionItem;
+import se.alipsa.jvmpls.core.model.Diagnostic;
+import se.alipsa.jvmpls.core.model.Location;
+import se.alipsa.jvmpls.core.model.Position;
+
 final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
 
   private static final Logger LOG = Logger.getLogger(ReloadableCoreFacade.class.getName());
 
   private final AtomicReference<CoreFacade> delegate = new AtomicReference<>();
   private final AtomicReference<AutoCloseable> lifecycle = new AtomicReference<>();
-  private final AtomicReference<String> unavailableReason = new AtomicReference<>("Server not initialized");
+  private final AtomicReference<String> unavailableReason =
+      new AtomicReference<>("Server not initialized");
 
   boolean isReady() {
     return delegate.get() != null;
@@ -29,19 +30,19 @@ final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
     return unavailableReason.get();
   }
 
-  synchronized void install(CoreFacade newDelegate,
-                            AutoCloseable newLifecycle,
-                            String readyMessage) throws Exception {
+  synchronized void install(CoreFacade newDelegate, AutoCloseable newLifecycle, String readyMessage)
+      throws Exception {
     Objects.requireNonNull(newDelegate, "newDelegate");
     AutoCloseable previousLifecycle = lifecycle.getAndSet(newLifecycle);
     delegate.set(newDelegate);
-    unavailableReason.set(readyMessage == null || readyMessage.isBlank()
-        ? "Workspace core is ready" : readyMessage);
+    unavailableReason.set(
+        readyMessage == null || readyMessage.isBlank() ? "Workspace core is ready" : readyMessage);
     if (previousLifecycle != null && previousLifecycle != newLifecycle) {
       try {
         previousLifecycle.close();
       } catch (Exception e) {
-        LOG.log(Level.WARNING, "Failed to close previous workspace core after installing new core", e);
+        LOG.log(
+            Level.WARNING, "Failed to close previous workspace core after installing new core", e);
       }
     }
   }
@@ -49,16 +50,14 @@ final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
   synchronized void clear(String reason) throws Exception {
     AutoCloseable previousLifecycle = lifecycle.getAndSet(null);
     delegate.set(null);
-    unavailableReason.set(reason == null || reason.isBlank()
-        ? "Server not initialized" : reason);
+    unavailableReason.set(reason == null || reason.isBlank() ? "Server not initialized" : reason);
     if (previousLifecycle != null) {
       previousLifecycle.close();
     }
   }
 
   void setUnavailableReason(String reason) {
-    unavailableReason.set(reason == null || reason.isBlank()
-        ? "Server not initialized" : reason);
+    unavailableReason.set(reason == null || reason.isBlank() ? "Server not initialized" : reason);
   }
 
   @Override

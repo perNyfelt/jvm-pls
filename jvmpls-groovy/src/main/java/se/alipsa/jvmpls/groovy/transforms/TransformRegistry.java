@@ -1,18 +1,19 @@
 package se.alipsa.jvmpls.groovy.transforms;
 
-import org.codehaus.groovy.ast.AnnotationNode;
-import org.codehaus.groovy.ast.ClassNode;
-import org.codehaus.groovy.ast.FieldNode;
-import se.alipsa.jvmpls.core.model.SymbolInfo;
-import se.alipsa.jvmpls.core.types.JvmTypes;
-import se.alipsa.jvmpls.groovy.GroovyAnnotations;
-import se.alipsa.jvmpls.groovy.SyntheticMemberSpec;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import org.codehaus.groovy.ast.AnnotationNode;
+import org.codehaus.groovy.ast.ClassNode;
+import org.codehaus.groovy.ast.FieldNode;
+
+import se.alipsa.jvmpls.core.model.SymbolInfo;
+import se.alipsa.jvmpls.core.types.JvmTypes;
+import se.alipsa.jvmpls.groovy.GroovyAnnotations;
+import se.alipsa.jvmpls.groovy.SyntheticMemberSpec;
 
 public final class TransformRegistry {
 
@@ -78,7 +79,8 @@ public final class TransformRegistry {
       return false;
     }
     String annotationName = annotation.getClassNode().getName();
-    return fqName.equals(annotationName) || fqName.endsWith("." + annotation.getClassNode().getNameWithoutPackage());
+    return fqName.equals(annotationName)
+        || fqName.endsWith("." + annotation.getClassNode().getNameWithoutPackage());
   }
 
   private static List<SyntheticMemberSpec> dedupe(List<SyntheticMemberSpec> specs) {
@@ -93,10 +95,18 @@ public final class TransformRegistry {
     return switch (spec.kind()) {
       case CLASS, INTERFACE, ENUM, ANNOTATION -> spec.kind() + ":" + spec.ownerFqn();
       case FIELD -> spec.kind() + ":" + spec.ownerFqn() + "." + spec.memberName();
-      case METHOD -> spec.kind() + ":" + spec.ownerFqn() + "#" + spec.memberName()
-          + JvmTypes.toLegacyMethodSignature(spec.methodSignature());
-      case CONSTRUCTOR -> SymbolInfo.Kind.CONSTRUCTOR + ":" + spec.ownerFqn()
-          + JvmTypes.toLegacyMethodSignature(spec.methodSignature());
+      case METHOD ->
+          spec.kind()
+              + ":"
+              + spec.ownerFqn()
+              + "#"
+              + spec.memberName()
+              + JvmTypes.toLegacyMethodSignature(spec.methodSignature());
+      case CONSTRUCTOR ->
+          SymbolInfo.Kind.CONSTRUCTOR
+              + ":"
+              + spec.ownerFqn()
+              + JvmTypes.toLegacyMethodSignature(spec.methodSignature());
       default -> spec.kind() + ":" + spec.ownerFqn() + ":" + spec.memberName();
     };
   }

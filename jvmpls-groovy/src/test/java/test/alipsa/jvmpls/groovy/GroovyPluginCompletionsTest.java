@@ -1,23 +1,23 @@
 package test.alipsa.jvmpls.groovy;
 
-import org.junit.jupiter.api.Test;
-import se.alipsa.jvmpls.core.model.CompletionItem;
-import se.alipsa.jvmpls.core.model.Diagnostic;
-import se.alipsa.jvmpls.core.model.Position;
-import se.alipsa.jvmpls.core.server.CoreServer;
+import static org.junit.jupiter.api.Assertions.*;
 
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.junit.jupiter.api.Assertions.*;
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
+
+import org.junit.jupiter.api.Test;
+
+import se.alipsa.jvmpls.core.model.CompletionItem;
+import se.alipsa.jvmpls.core.model.Diagnostic;
+import se.alipsa.jvmpls.core.model.Position;
+import se.alipsa.jvmpls.core.server.CoreServer;
 
 class GroovyPluginCompletionsTest {
 
@@ -37,15 +37,16 @@ class GroovyPluginCompletionsTest {
 
     Path main = dir.resolve("Main.groovy");
     // caret goes right after "Ba" (prefix = "Ba")
-    String mainCode = """
-      package demo
-      import thing.Banana
-      class Main {
-        static void run() {
-          Ba/*caret*/
+    String mainCode =
+        """
+        package demo
+        import thing.Banana
+        class Main {
+          static void run() {
+            Ba/*caret*/
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
@@ -53,14 +54,15 @@ class GroovyPluginCompletionsTest {
       // index all 3
       server.openFile(appleUri, appleCode);
       server.openFile(bananaUri, bananaCode);
-      server.openFile(mainUri,   mainCode);
+      server.openFile(mainUri, mainCode);
 
       Position pos = positionAtMarker(mainCode, "/*caret*/");
       List<CompletionItem> items = server.completions(mainUri, pos);
 
-      assertTrue(containsLabel(items, "Banana"),
-          "Expected 'Banana' from explicit single-type import");
-      assertFalse(containsLabel(items, "Apple"),
+      assertTrue(
+          containsLabel(items, "Banana"), "Expected 'Banana' from explicit single-type import");
+      assertFalse(
+          containsLabel(items, "Apple"),
           "Should not suggest 'Apple' for prefix 'Ba' from same package");
     }
   }
@@ -75,27 +77,30 @@ class GroovyPluginCompletionsTest {
     String bananaUri = banana.toUri().toString();
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-    package demo
-    import thing.*
-    class Main {
-      static void run() {
-        thing.Ba/*caret*/
-      }
-    }
-    """;
+    String mainCode =
+        """
+        package demo
+        import thing.*
+        class Main {
+          static void run() {
+            thing.Ba/*caret*/
+          }
+        }
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
     // collect diagnostics per file
     var diags = new ConcurrentHashMap<String, List<Diagnostic>>();
-    try (CoreServer server = CoreServer.createDefault((uri, ds) ->
-        diags.computeIfAbsent(uri, k -> new ArrayList<>()).addAll(ds))) {
+    try (CoreServer server =
+        CoreServer.createDefault(
+            (uri, ds) -> diags.computeIfAbsent(uri, k -> new ArrayList<>()).addAll(ds))) {
       server.openFile(bananaUri, bananaCode);
-      server.openFile(mainUri,   mainCode);
+      server.openFile(mainUri, mainCode);
 
       // Banana.groovy is well-formed, should yield no diagnostics
-      assertTrue(diags.getOrDefault(bananaUri, List.of()).isEmpty(),
+      assertTrue(
+          diags.getOrDefault(bananaUri, List.of()).isEmpty(),
           "Banana.groovy should index without diagnostics");
 
       Position pos = positionAtMarker(mainCode, "/*caret*/");
@@ -107,7 +112,8 @@ class GroovyPluginCompletionsTest {
 
       // Because 'import thing.*' is present, there must be NO auto-import edit
       var edits = bananaItem.getAdditionalTextEdits();
-      assertTrue(edits == null || edits.isEmpty(),
+      assertTrue(
+          edits == null || edits.isEmpty(),
           "No auto-import edits expected when star import already makes Banana visible");
     }
   }
@@ -117,14 +123,15 @@ class GroovyPluginCompletionsTest {
     Path dir = Files.createTempDirectory("jvmpls-groovy-complete3");
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
-      class Main {
-        static void run() {
-          java.util.Li/*caret*/
+    String mainCode =
+        """
+        package demo
+        class Main {
+          static void run() {
+            java.util.Li/*caret*/
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
@@ -134,8 +141,8 @@ class GroovyPluginCompletionsTest {
       Position pos = positionAtMarker(mainCode, "/*caret*/");
       List<CompletionItem> items = server.completions(mainUri, pos);
 
-      assertTrue(containsLabel(items, "List"),
-          "Expected 'List' from external JDK package completion");
+      assertTrue(
+          containsLabel(items, "List"), "Expected 'List' from external JDK package completion");
     }
   }
 
@@ -144,16 +151,17 @@ class GroovyPluginCompletionsTest {
     Path dir = Files.createTempDirectory("jvmpls-groovy-complete4");
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
-      import java.util.List
-      class Main {
-        List<String> names = []
-        void run() {
-          names.ad/*caret*/
+    String mainCode =
+        """
+        package demo
+        import java.util.List
+        class Main {
+          List<String> names = []
+          void run() {
+            names.ad/*caret*/
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
@@ -174,17 +182,18 @@ class GroovyPluginCompletionsTest {
     Path dir = Files.createTempDirectory("jvmpls-groovy-complete5");
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
-      import java.io.*
-      import java.util.*
-      class Main {
-        List<String> names = []
-        void run() {
-          names.ad/*caret*/
+    String mainCode =
+        """
+        package demo
+        import java.io.*
+        import java.util.*
+        class Main {
+          List<String> names = []
+          void run() {
+            names.ad/*caret*/
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
@@ -203,7 +212,11 @@ class GroovyPluginCompletionsTest {
   void hides_inaccessible_binary_members_and_dedupes_overridden_members() throws Exception {
     Path sourceDir = Files.createTempDirectory("jvmpls-groovy-complete6-src");
     Path outputDir = Files.createTempDirectory("jvmpls-groovy-complete6-out");
-    compileJavaSource(sourceDir, outputDir, "demo.Api", """
+    compileJavaSource(
+        sourceDir,
+        outputDir,
+        "demo.Api",
+        """
         package demo;
         public class Api {
           public void open() {}
@@ -213,35 +226,45 @@ class GroovyPluginCompletionsTest {
         """);
 
     Path main = sourceDir.resolve("Main.groovy");
-    String mainCode = """
-      package other
-      import demo.Api
-      import java.util.List
-      class Main {
-        Api api
-        List<String> names = []
-        void run() {
-          api./*api*/
-          names.add/*list*/
+    String mainCode =
+        """
+        package other
+        import demo.Api
+        import java.util.List
+        class Main {
+          Api api
+          List<String> names = []
+          void run() {
+            api./*api*/
+            names.add/*list*/
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
-    try (CoreServer server = CoreServer.createDefault((u, d) -> {},
-        List.of(outputDir.toString()),
-        Path.of(System.getProperty("java.home")))) {
+    try (CoreServer server =
+        CoreServer.createDefault(
+            (u, d) -> {},
+            List.of(outputDir.toString()),
+            Path.of(System.getProperty("java.home")))) {
       server.openFile(mainUri, mainCode);
 
-      List<CompletionItem> apiItems = server.completions(mainUri, positionAtMarker(mainCode, "/*api*/"));
+      List<CompletionItem> apiItems =
+          server.completions(mainUri, positionAtMarker(mainCode, "/*api*/"));
       assertTrue(containsLabel(apiItems, "open"), "Expected public binary member");
-      assertFalse(containsLabel(apiItems, "internal"), "Package-private member should not be visible across packages");
-      assertFalse(containsLabel(apiItems, "subOnly"), "Protected member should not be visible to unrelated classes");
+      assertFalse(
+          containsLabel(apiItems, "internal"),
+          "Package-private member should not be visible across packages");
+      assertFalse(
+          containsLabel(apiItems, "subOnly"),
+          "Protected member should not be visible to unrelated classes");
 
-      List<CompletionItem> listItems = server.completions(mainUri, positionAtMarker(mainCode, "/*list*/"));
+      List<CompletionItem> listItems =
+          server.completions(mainUri, positionAtMarker(mainCode, "/*list*/"));
       long addCount = listItems.stream().filter(item -> "add".equals(item.getLabel())).count();
-      assertEquals(2, addCount, "Expected exactly the two List.add overloads without inherited duplicates");
+      assertEquals(
+          2, addCount, "Expected exactly the two List.add overloads without inherited duplicates");
     }
   }
 
@@ -249,13 +272,21 @@ class GroovyPluginCompletionsTest {
   void shows_protected_members_to_cross_package_subclasses() throws Exception {
     Path sourceDir = Files.createTempDirectory("jvmpls-groovy-complete7-src");
     Path outputDir = Files.createTempDirectory("jvmpls-groovy-complete7-out");
-    compileJavaSource(sourceDir, outputDir, "demo.Base", """
+    compileJavaSource(
+        sourceDir,
+        outputDir,
+        "demo.Base",
+        """
         package demo;
         public class Base {
           protected void protectedMethod() {}
         }
         """);
-    compileJavaSource(sourceDir, outputDir, "other.Sub", """
+    compileJavaSource(
+        sourceDir,
+        outputDir,
+        "other.Sub",
+        """
         package other;
         import demo.Base;
         public class Sub extends Base {}
@@ -263,25 +294,30 @@ class GroovyPluginCompletionsTest {
 
     Path main = sourceDir.resolve("other/Consumer.groovy");
     Files.createDirectories(main.getParent());
-    String mainCode = """
-      package other
-      class Consumer extends Sub {
-        Consumer sibling
-        void run() {
-          sibling.pro/*caret*/
+    String mainCode =
+        """
+        package other
+        class Consumer extends Sub {
+          Consumer sibling
+          void run() {
+            sibling.pro/*caret*/
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
-    try (CoreServer server = CoreServer.createDefault((u, d) -> {},
-        List.of(outputDir.toString()),
-        Path.of(System.getProperty("java.home")))) {
+    try (CoreServer server =
+        CoreServer.createDefault(
+            (u, d) -> {},
+            List.of(outputDir.toString()),
+            Path.of(System.getProperty("java.home")))) {
       server.openFile(mainUri, mainCode);
 
-      List<CompletionItem> items = server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/"));
-      assertTrue(containsLabel(items, "protectedMethod"),
+      List<CompletionItem> items =
+          server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/"));
+      assertTrue(
+          containsLabel(items, "protectedMethod"),
           "Protected members should remain visible through subtype-qualified access");
     }
   }
@@ -291,64 +327,66 @@ class GroovyPluginCompletionsTest {
     Path dir = Files.createTempDirectory("jvmpls-groovy-phase5");
 
     Path person = dir.resolve("Person.groovy");
-    String personCode = """
-      package demo
-      import groovy.transform.builder.Builder
-      @Builder
-      class Person {
-        String name
-      }
-      """;
+    String personCode =
+        """
+        package demo
+        import groovy.transform.builder.Builder
+        @Builder
+        class Person {
+          String name
+        }
+        """;
     Files.writeString(person, personCode, StandardCharsets.UTF_8);
     String personUri = person.toUri().toString();
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
-      import groovy.util.logging.Log
-      import groovy.lang.Delegate
-      import groovy.lang.Mixin
+    String mainCode =
+        """
+        package demo
+        import groovy.util.logging.Log
+        import groovy.lang.Delegate
+        import groovy.lang.Mixin
 
-      class Worker {
-        String hello() { "hi" }
-      }
-
-      class Thing {}
-      Thing.metaClass.bar = { -> 1 }
-
-      class StringCategory {
-        static String shout(String self) { self.toUpperCase() }
-      }
-
-      class Extra {
-        String extra() { "x" }
-      }
-
-      @Mixin(Extra)
-      class Mixed {}
-
-      @Log
-      class Main {
-        @Delegate Worker worker = new Worker()
-        PersonBuilder builder = Person.builder()
-        Thing thing = new Thing()
-        String value = "x"
-        Mixed mixed = new Mixed()
-        Main self
-
-        void run() {
-          builder.na/*builder*/
-          self.hel/*delegate*/
-          thing.ba/*meta*/
-          log.in/*log*/
-          use(StringCategory) {
-            value.sh/*categoryInside*/
-          }
-          value.sh/*categoryOutside*/
-          mixed.ex/*mixin*/
+        class Worker {
+          String hello() { "hi" }
         }
-      }
-      """;
+
+        class Thing {}
+        Thing.metaClass.bar = { -> 1 }
+
+        class StringCategory {
+          static String shout(String self) { self.toUpperCase() }
+        }
+
+        class Extra {
+          String extra() { "x" }
+        }
+
+        @Mixin(Extra)
+        class Mixed {}
+
+        @Log
+        class Main {
+          @Delegate Worker worker = new Worker()
+          PersonBuilder builder = Person.builder()
+          Thing thing = new Thing()
+          String value = "x"
+          Mixed mixed = new Mixed()
+          Main self
+
+          void run() {
+            builder.na/*builder*/
+            self.hel/*delegate*/
+            thing.ba/*meta*/
+            log.in/*log*/
+            use(StringCategory) {
+              value.sh/*categoryInside*/
+            }
+            value.sh/*categoryOutside*/
+            mixed.ex/*mixin*/
+          }
+        }
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
@@ -356,92 +394,108 @@ class GroovyPluginCompletionsTest {
       server.openFile(personUri, personCode);
       server.openFile(mainUri, mainCode);
 
-      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*builder*/")), "name"),
+      assertNotNull(
+          byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*builder*/")), "name"),
           "builder methods should be visible on synthetic builder type");
-      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*delegate*/")), "hello"),
+      assertNotNull(
+          byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*delegate*/")), "hello"),
           "delegate methods should be visible on owner type");
-      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*meta*/")), "bar"),
+      assertNotNull(
+          byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*meta*/")), "bar"),
           "metaClass-added methods should be visible on the target type");
-      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*log*/")), "info"),
+      assertNotNull(
+          byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*log*/")), "info"),
           "log transform should expose java.util.logging.Logger members");
-      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*categoryInside*/")), "shout"),
+      assertNotNull(
+          byLabel(
+              server.completions(mainUri, positionAtMarker(mainCode, "/*categoryInside*/")),
+              "shout"),
           "category methods should be visible inside use(Category) scope");
-      assertNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*categoryOutside*/")), "shout"),
+      assertNull(
+          byLabel(
+              server.completions(mainUri, positionAtMarker(mainCode, "/*categoryOutside*/")),
+              "shout"),
           "category methods should not leak outside the use(Category) scope");
-      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*mixin*/")), "extra"),
+      assertNotNull(
+          byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*mixin*/")), "extra"),
           "mixin methods should be visible on the mixed target type");
     }
   }
 
   @Test
-  void emits_strict_static_undefined_member_diagnostics_without_penalizing_dynamic_classes() throws Exception {
+  void emits_strict_static_undefined_member_diagnostics_without_penalizing_dynamic_classes()
+      throws Exception {
     Path dir = Files.createTempDirectory("jvmpls-groovy-phase5-diags");
 
     Path staticFile = dir.resolve("StrictMain.groovy");
-    String staticCode = """
-      package demo
-      import groovy.transform.CompileStatic
+    String staticCode =
+        """
+        package demo
+        import groovy.transform.CompileStatic
 
-      @CompileStatic
-      class StrictMain {
-        String value = "x"
-        void run() {
-          value.missingMethod()
-          value.missingProperty
+        @CompileStatic
+        class StrictMain {
+          String value = "x"
+          void run() {
+            value.missingMethod()
+            value.missingProperty
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(staticFile, staticCode, StandardCharsets.UTF_8);
 
     Path getterFile = dir.resolve("GetterMain.groovy");
-    String getterCode = """
-      package demo
-      import groovy.transform.CompileStatic
-      import java.util.Date
+    String getterCode =
+        """
+        package demo
+        import groovy.transform.CompileStatic
+        import java.util.Date
 
-      @CompileStatic
-      class GetterMain {
-        Date date = new Date()
-        long read() {
-          date.time
+        @CompileStatic
+        class GetterMain {
+          Date date = new Date()
+          long read() {
+            date.time
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(getterFile, getterCode, StandardCharsets.UTF_8);
 
     Path dynamicFile = dir.resolve("DynamicMain.groovy");
-    String dynamicCode = """
-      package demo
+    String dynamicCode =
+        """
+        package demo
 
-      class DynamicMain {
-        def methodMissing(String name, Object args) { null }
-        def propertyMissing(String name) { null }
+        class DynamicMain {
+          def methodMissing(String name, Object args) { null }
+          def propertyMissing(String name) { null }
 
-        void run() {
-          missingMethod()
-          missingProperty
+          void run() {
+            missingMethod()
+            missingProperty
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(dynamicFile, dynamicCode, StandardCharsets.UTF_8);
 
     Path relaxedFile = dir.resolve("RelaxedMain.groovy");
-    String relaxedCode = """
-      package demo
-      import groovy.transform.CompileDynamic
-      import groovy.transform.CompileStatic
+    String relaxedCode =
+        """
+        package demo
+        import groovy.transform.CompileDynamic
+        import groovy.transform.CompileStatic
 
-      @CompileStatic
-      class RelaxedMain {
-        String value = "x"
+        @CompileStatic
+        class RelaxedMain {
+          String value = "x"
 
-        @CompileDynamic
-        void run() {
-          value.missingMethod()
-          value.missingProperty
+          @CompileDynamic
+          void run() {
+            value.missingMethod()
+            value.missingProperty
+          }
         }
-      }
-      """;
+        """;
     Files.writeString(relaxedFile, relaxedCode, StandardCharsets.UTF_8);
 
     try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
@@ -450,17 +504,28 @@ class GroovyPluginCompletionsTest {
       List<Diagnostic> dynamicDiags = server.openFile(dynamicFile.toUri().toString(), dynamicCode);
       List<Diagnostic> relaxedDiags = server.openFile(relaxedFile.toUri().toString(), relaxedCode);
 
-      assertTrue(strictDiags.stream().anyMatch(diag -> "undefined-method".equals(diag.getCode())),
+      assertTrue(
+          strictDiags.stream().anyMatch(diag -> "undefined-method".equals(diag.getCode())),
           "CompileStatic code should report missing methods");
-      assertTrue(strictDiags.stream().anyMatch(diag -> "undefined-property".equals(diag.getCode())),
+      assertTrue(
+          strictDiags.stream().anyMatch(diag -> "undefined-property".equals(diag.getCode())),
           "CompileStatic code should report missing properties");
-      assertTrue(dynamicDiags.stream().noneMatch(diag -> "undefined-method".equals(diag.getCode())
-          || "undefined-property".equals(diag.getCode())),
+      assertTrue(
+          dynamicDiags.stream()
+              .noneMatch(
+                  diag ->
+                      "undefined-method".equals(diag.getCode())
+                          || "undefined-property".equals(diag.getCode())),
           "Dynamic classes should not emit synthetic undefined-member diagnostics");
-      assertTrue(relaxedDiags.stream().noneMatch(diag -> "undefined-method".equals(diag.getCode())
-          || "undefined-property".equals(diag.getCode())),
+      assertTrue(
+          relaxedDiags.stream()
+              .noneMatch(
+                  diag ->
+                      "undefined-method".equals(diag.getCode())
+                          || "undefined-property".equals(diag.getCode())),
           "CompileDynamic regions should relax strict-static undefined-member diagnostics");
-      assertTrue(getterDiags.stream().noneMatch(diag -> "undefined-property".equals(diag.getCode())),
+      assertTrue(
+          getterDiags.stream().noneMatch(diag -> "undefined-property".equals(diag.getCode())),
           "Getter-backed bean properties should remain valid in strict static mode");
     }
   }
@@ -470,37 +535,38 @@ class GroovyPluginCompletionsTest {
     Path dir = Files.createTempDirectory("jvmpls-groovy-phase5-categories");
 
     Path main = dir.resolve("Main.groovy");
-    String mainCode = """
-      package demo
+    String mainCode =
+        """
+        package demo
 
-      class FirstCategory {
-        static String alpha(String self) { self + "a" }
-      }
+        class FirstCategory {
+          static String alpha(String self) { self + "a" }
+        }
 
-      class SecondCategory {
-        static String beta(String self) { self + "b" }
-      }
+        class SecondCategory {
+          static String beta(String self) { self + "b" }
+        }
 
-      class Main {
-        String value = "x"
-        void run() {
-          use(FirstCategory, SecondCategory) {
-            value.be/*caret*/
+        class Main {
+          String value = "x"
+          void run() {
+            use(FirstCategory, SecondCategory) {
+              value.be/*caret*/
+            }
           }
         }
-      }
-      """;
+        """;
     Files.writeString(main, mainCode, StandardCharsets.UTF_8);
     String mainUri = main.toUri().toString();
 
     try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
       server.openFile(mainUri, mainCode);
 
-      CompletionItem beta = byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/")), "beta");
+      CompletionItem beta =
+          byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/")), "beta");
       assertNotNull(beta, "Later categories in use(A, B) should also contribute scoped members");
     }
   }
-
 
   // ---------- helpers ----------
 
@@ -524,19 +590,28 @@ class GroovyPluginCompletionsTest {
     return null;
   }
 
-  /** Convert the index of a marker to a Position (line/column), where Position points to the marker start. */
+  /**
+   * Convert the index of a marker to a Position (line/column), where Position points to the marker
+   * start.
+   */
   private static Position positionAtMarker(String text, String marker) {
     int idx = text.indexOf(marker);
     if (idx < 0) throw new AssertionError("Marker not found: " + marker);
     int line = 0, col = 0;
     for (int i = 0; i < idx; i++) {
       char c = text.charAt(i);
-      if (c == '\n') { line++; col = 0; } else { col++; }
+      if (c == '\n') {
+        line++;
+        col = 0;
+      } else {
+        col++;
+      }
     }
     return new Position(line, col);
   }
 
-  private static void compileJavaSource(Path sourceDir, Path outputDir, String fqn, String source) throws Exception {
+  private static void compileJavaSource(Path sourceDir, Path outputDir, String fqn, String source)
+      throws Exception {
     JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     if (compiler == null) {
       throw new IllegalStateException("system java compiler not available");
@@ -544,10 +619,16 @@ class GroovyPluginCompletionsTest {
     Path sourceFile = sourceDir.resolve(fqn.replace('.', '/') + ".java");
     Files.createDirectories(sourceFile.getParent());
     Files.writeString(sourceFile, source, StandardCharsets.UTF_8);
-    int result = compiler.run(null, null, null,
-        "-classpath", outputDir.toString(),
-        "-d", outputDir.toString(),
-        sourceFile.toString());
+    int result =
+        compiler.run(
+            null,
+            null,
+            null,
+            "-classpath",
+            outputDir.toString(),
+            "-d",
+            outputDir.toString(),
+            sourceFile.toString());
     assertEquals(0, result, "compilation should succeed");
   }
 }

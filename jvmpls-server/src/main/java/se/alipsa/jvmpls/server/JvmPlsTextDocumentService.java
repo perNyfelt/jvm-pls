@@ -1,13 +1,5 @@
 package se.alipsa.jvmpls.server;
 
-import org.eclipse.lsp4j.*;
-import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
-import org.eclipse.lsp4j.services.TextDocumentService;
-import se.alipsa.jvmpls.core.CoreFacade;
-
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -16,9 +8,18 @@ import java.util.function.BooleanSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
+import org.eclipse.lsp4j.services.TextDocumentService;
+
+import se.alipsa.jvmpls.core.CoreFacade;
+
 /**
- * Bridges the LSP4J {@link TextDocumentService} interface to the
- * transport-agnostic {@link CoreFacade}.
+ * Bridges the LSP4J {@link TextDocumentService} interface to the transport-agnostic {@link
+ * CoreFacade}.
  */
 public class JvmPlsTextDocumentService implements TextDocumentService {
 
@@ -33,10 +34,11 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
     this(core, new OpenDocuments(), () -> true, () -> true);
   }
 
-  JvmPlsTextDocumentService(CoreFacade core,
-                            OpenDocuments openDocuments,
-                            BooleanSupplier acceptingRequests,
-                            BooleanSupplier coreReady) {
+  JvmPlsTextDocumentService(
+      CoreFacade core,
+      OpenDocuments openDocuments,
+      BooleanSupplier acceptingRequests,
+      BooleanSupplier coreReady) {
     this.core = core;
     this.openDocuments = openDocuments;
     this.acceptingRequests = acceptingRequests;
@@ -118,25 +120,26 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
       LOG.warning("Rejecting textDocument/completion before initialization");
       return rejectedUnavailable("textDocument/completion");
     }
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        String uri = params.getTextDocument().getUri();
-        se.alipsa.jvmpls.core.model.Position corePos =
-            LspTypeConverter.toCore(params.getPosition());
-        List<se.alipsa.jvmpls.core.model.CompletionItem> coreItems =
-            core.completions(uri, corePos);
-        List<CompletionItem> lspItems = LspTypeConverter.toLspCompletionItems(coreItems);
-        return Either.<List<CompletionItem>, CompletionList>forLeft(lspItems);
-      } catch (RuntimeException e) {
-        LOG.log(Level.SEVERE, "Completion request failed", e);
-        return Either.<List<CompletionItem>, CompletionList>forLeft(Collections.emptyList());
-      }
-    });
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            String uri = params.getTextDocument().getUri();
+            se.alipsa.jvmpls.core.model.Position corePos =
+                LspTypeConverter.toCore(params.getPosition());
+            List<se.alipsa.jvmpls.core.model.CompletionItem> coreItems =
+                core.completions(uri, corePos);
+            List<CompletionItem> lspItems = LspTypeConverter.toLspCompletionItems(coreItems);
+            return Either.<List<CompletionItem>, CompletionList>forLeft(lspItems);
+          } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Completion request failed", e);
+            return Either.<List<CompletionItem>, CompletionList>forLeft(Collections.emptyList());
+          }
+        });
   }
 
   @Override
-  public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
-      DefinitionParams params) {
+  public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      definition(DefinitionParams params) {
     if (!acceptingRequests.getAsBoolean()) {
       LOG.warning("Rejecting textDocument/definition after shutdown");
       return rejectedAfterShutdown("textDocument/definition");
@@ -145,38 +148,43 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
       LOG.warning("Rejecting textDocument/definition before initialization");
       return rejectedUnavailable("textDocument/definition");
     }
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        String uri = params.getTextDocument().getUri();
-        se.alipsa.jvmpls.core.model.Position corePos =
-            LspTypeConverter.toCore(params.getPosition());
-        Optional<se.alipsa.jvmpls.core.model.Location> coreLocation =
-            core.definition(uri, corePos);
-        List<Location> locations = coreLocation
-            .map(loc -> List.of(LspTypeConverter.toLsp(loc)))
-            .orElse(Collections.emptyList());
-        return Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(locations);
-      } catch (RuntimeException e) {
-        LOG.log(Level.SEVERE, "Definition request failed", e);
-        return Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(
-            Collections.emptyList());
-      }
-    });
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            String uri = params.getTextDocument().getUri();
+            se.alipsa.jvmpls.core.model.Position corePos =
+                LspTypeConverter.toCore(params.getPosition());
+            Optional<se.alipsa.jvmpls.core.model.Location> coreLocation =
+                core.definition(uri, corePos);
+            List<Location> locations =
+                coreLocation
+                    .map(loc -> List.of(LspTypeConverter.toLsp(loc)))
+                    .orElse(Collections.emptyList());
+            return Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(
+                locations);
+          } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Definition request failed", e);
+            return Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(
+                Collections.emptyList());
+          }
+        });
   }
 
   private static <T> CompletableFuture<T> rejectedAfterShutdown(String method) {
-    return CompletableFuture.failedFuture(new ResponseErrorException(
-        new ResponseError(
-            ResponseErrorCode.InvalidRequest,
-            method + " is not available after shutdown",
-            null)));
+    return CompletableFuture.failedFuture(
+        new ResponseErrorException(
+            new ResponseError(
+                ResponseErrorCode.InvalidRequest,
+                method + " is not available after shutdown",
+                null)));
   }
 
   private static <T> CompletableFuture<T> rejectedUnavailable(String method) {
-    return CompletableFuture.failedFuture(new ResponseErrorException(
-        new ResponseError(
-            ResponseErrorCode.InvalidRequest,
-            method + " is not available before initialization completes",
-            null)));
+    return CompletableFuture.failedFuture(
+        new ResponseErrorException(
+            new ResponseError(
+                ResponseErrorCode.InvalidRequest,
+                method + " is not available before initialization completes",
+                null)));
   }
 }

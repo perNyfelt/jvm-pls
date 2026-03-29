@@ -1,4 +1,5 @@
 package se.alipsa.jvmpls.core.model;
+
 import java.util.Objects;
 
 public class Diagnostic {
@@ -12,8 +13,8 @@ public class Diagnostic {
   private final Range range;
   private final String message;
   private final Severity severity;
-  private final String source;  // e.g. "JvmLangPlugin"
-  private final String code;    // optional diagnostic code/id
+  private final String source; // e.g. "JvmLangPlugin"
+  private final String code; // optional diagnostic code/id
 
   public Diagnostic(Range range, String message, Severity severity, String source, String code) {
     this.range = Objects.requireNonNull(range, "range cannot be null");
@@ -45,12 +46,20 @@ public class Diagnostic {
 
   @Override
   public String toString() {
-    return "Diagnostic{" +
-        "range=" + range +
-        ", message='" + message + '\'' +
-        ", severity=" + severity +
-        ", source='" + source + '\'' +
-        ", code='" + code + '\'' +
-        '}';
+    return "Diagnostic{"
+        + "range="
+        + range
+        + ", message='"
+        + message
+        + '\''
+        + ", severity="
+        + severity
+        + ", source='"
+        + source
+        + '\''
+        + ", code='"
+        + code
+        + '\''
+        + '}';
   }
 }

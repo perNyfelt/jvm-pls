@@ -14,10 +14,12 @@ public final class TypeRelations {
     if (source.equals(target)) {
       return true;
     }
-    if (target instanceof ClassType targetClass && "java.lang.Object".equals(targetClass.fqName())) {
+    if (target instanceof ClassType targetClass
+        && "java.lang.Object".equals(targetClass.fqName())) {
       return true;
     }
-    if (source instanceof ArrayType && target instanceof ClassType targetClass
+    if (source instanceof ArrayType
+        && target instanceof ClassType targetClass
         && "java.lang.Object".equals(targetClass.fqName())) {
       return true;
     }

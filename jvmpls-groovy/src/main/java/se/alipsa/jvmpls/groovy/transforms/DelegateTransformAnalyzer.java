@@ -1,16 +1,17 @@
 package se.alipsa.jvmpls.groovy.transforms;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
 import org.codehaus.groovy.ast.FieldNode;
+
 import se.alipsa.jvmpls.core.CoreQuery;
 import se.alipsa.jvmpls.core.model.InferenceConfidence;
 import se.alipsa.jvmpls.core.model.SymbolInfo;
 import se.alipsa.jvmpls.core.model.SyntheticOrigin;
 import se.alipsa.jvmpls.core.types.ClassType;
 import se.alipsa.jvmpls.groovy.SyntheticMemberSpec;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
 
 final class DelegateTransformAnalyzer {
 
@@ -24,23 +25,25 @@ final class DelegateTransformAnalyzer {
         continue;
       }
       if (symbol.getKind() == SymbolInfo.Kind.METHOD && symbol.getMethodSignature() != null) {
-        specs.add(SyntheticMemberSpec.syntheticMethod(
-            context.ownerFqn(),
-            memberName(symbol),
-            symbol.getMethodSignature(),
-            context.locationOf().apply(delegateField),
-            symbol.getModifiers(),
-            SyntheticOrigin.DELEGATE,
-            InferenceConfidence.DETERMINISTIC));
+        specs.add(
+            SyntheticMemberSpec.syntheticMethod(
+                context.ownerFqn(),
+                memberName(symbol),
+                symbol.getMethodSignature(),
+                context.locationOf().apply(delegateField),
+                symbol.getModifiers(),
+                SyntheticOrigin.DELEGATE,
+                InferenceConfidence.DETERMINISTIC));
       } else if (symbol.getKind() == SymbolInfo.Kind.FIELD && symbol.getResolvedType() != null) {
-        specs.add(SyntheticMemberSpec.syntheticField(
-            context.ownerFqn(),
-            memberName(symbol),
-            symbol.getResolvedType(),
-            context.locationOf().apply(delegateField),
-            symbol.getModifiers(),
-            SyntheticOrigin.DELEGATE,
-            InferenceConfidence.DETERMINISTIC));
+        specs.add(
+            SyntheticMemberSpec.syntheticField(
+                context.ownerFqn(),
+                memberName(symbol),
+                symbol.getResolvedType(),
+                context.locationOf().apply(delegateField),
+                symbol.getModifiers(),
+                SyntheticOrigin.DELEGATE,
+                InferenceConfidence.DETERMINISTIC));
       }
     }
     return specs;
@@ -57,7 +60,8 @@ final class DelegateTransformAnalyzer {
     return lastDot < 0 ? fqn : fqn.substring(lastDot + 1);
   }
 
-  private static boolean isVisible(SymbolInfo member, String currentOwner, String receiverType, CoreQuery core) {
+  private static boolean isVisible(
+      SymbolInfo member, String currentOwner, String receiverType, CoreQuery core) {
     Set<String> modifiers = member.getModifiers() == null ? Set.of() : member.getModifiers();
     if (member.getKind() == SymbolInfo.Kind.CONSTRUCTOR || modifiers.contains("static")) {
       return false;
@@ -74,7 +78,8 @@ final class DelegateTransformAnalyzer {
     }
     if (modifiers.contains("protected")) {
       return samePackage(currentOwner, declaringType)
-          || (isSubtypeOf(currentOwner, declaringType, core) && isSubtypeOf(receiverType, currentOwner, core));
+          || (isSubtypeOf(currentOwner, declaringType, core)
+              && isSubtypeOf(receiverType, currentOwner, core));
     }
     return true;
   }
@@ -95,7 +100,8 @@ final class DelegateTransformAnalyzer {
     return isSubtypeOf(candidate, target, core, new java.util.LinkedHashSet<>());
   }
 
-  private static boolean isSubtypeOf(String candidate, String target, CoreQuery core, Set<String> visited) {
+  private static boolean isSubtypeOf(
+      String candidate, String target, CoreQuery core, Set<String> visited) {
     if (candidate == null || target == null || candidate.isBlank() || target.isBlank()) {
       return false;
     }

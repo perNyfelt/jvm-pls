@@ -16,8 +16,9 @@ public record ClassType(String fqName, List<JvmType> typeArguments) implements J
     if (typeArguments.isEmpty()) {
       return fqName;
     }
-    return fqName + "<" + typeArguments.stream()
-        .map(JvmType::displayName)
-        .collect(Collectors.joining(", ")) + ">";
+    return fqName
+        + "<"
+        + typeArguments.stream().map(JvmType::displayName).collect(Collectors.joining(", "))
+        + ">";
   }
 }

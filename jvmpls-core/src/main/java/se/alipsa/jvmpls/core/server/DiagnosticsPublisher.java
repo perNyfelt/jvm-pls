@@ -1,8 +1,8 @@
 package se.alipsa.jvmpls.core.server;
 
-import se.alipsa.jvmpls.core.model.Diagnostic;
-
 import java.util.List;
+
+import se.alipsa.jvmpls.core.model.Diagnostic;
 
 /** Sink for diagnostics (e.g., log, UI, test capture). */
 @FunctionalInterface
