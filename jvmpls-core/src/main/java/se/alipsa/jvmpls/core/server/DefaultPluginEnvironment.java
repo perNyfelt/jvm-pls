@@ -6,9 +6,13 @@ import se.alipsa.jvmpls.core.PluginEnvironment;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /** Minimal PluginEnvironment used by the in-proc server bootstrap. */
 final class DefaultPluginEnvironment implements PluginEnvironment {
+
+  private static final Logger LOG = Logger.getLogger(DefaultPluginEnvironment.class.getName());
 
   private final CoreQuery core;
   private final Executor executor;
@@ -27,7 +31,16 @@ final class DefaultPluginEnvironment implements PluginEnvironment {
   @Override public List<String> classpath() { return classpath; }
 
   @Override public void log(String level, String message, Throwable t) {
-    // simple stderr logger; replace as needed
-    System.err.println("[" + level + "] " + message + (t != null ? " :: " + t : ""));
+    Level julLevel = switch (level) {
+      case "ERROR" -> Level.SEVERE;
+      case "WARN" -> Level.WARNING;
+      case "INFO" -> Level.FINE;
+      default -> Level.FINE;
+    };
+    if (t == null) {
+      LOG.log(julLevel, message);
+    } else {
+      LOG.log(julLevel, message, t);
+    }
   }
 }

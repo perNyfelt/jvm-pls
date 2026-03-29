@@ -16,6 +16,8 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.LanguageClient;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import se.alipsa.jvmpls.server.JvmPlsLanguageServer;
 
@@ -28,6 +30,7 @@ import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -35,6 +38,31 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JvmPlsLanguageServerWorkspaceTest {
+
+  private static final String WORKSPACE_MANAGER_LOGGER =
+      "se.alipsa.jvmpls.server.WorkspaceManager";
+  private static final String TEXT_DOCUMENT_SERVICE_LOGGER =
+      "se.alipsa.jvmpls.server.JvmPlsTextDocumentService";
+  private TestLogCapture workspaceLogs;
+  private TestLogCapture textDocumentLogs;
+
+  @BeforeEach
+  void captureLogs() {
+    workspaceLogs = TestLogCapture.capture(WORKSPACE_MANAGER_LOGGER);
+    textDocumentLogs = TestLogCapture.capture(TEXT_DOCUMENT_SERVICE_LOGGER);
+  }
+
+  @AfterEach
+  void restoreLogs() {
+    if (textDocumentLogs != null) {
+      textDocumentLogs.close();
+      textDocumentLogs = null;
+    }
+    if (workspaceLogs != null) {
+      workspaceLogs.close();
+      workspaceLogs = null;
+    }
+  }
 
   @Test
   void completion_isRejectedBeforeInitialize() {
@@ -49,6 +77,8 @@ class JvmPlsLanguageServerWorkspaceTest {
     assertTrue(failure.getCause() instanceof ResponseErrorException);
     ResponseErrorException error = (ResponseErrorException) failure.getCause();
     assertEquals(ResponseErrorCode.InvalidRequest.getValue(), error.getResponseError().getCode());
+    assertTrue(textDocumentLogs.contains(Level.WARNING,
+        "Rejecting textDocument/completion before initialization"));
   }
 
   @Test
@@ -177,6 +207,7 @@ class JvmPlsLanguageServerWorkspaceTest {
     assertTrue(client.messages.stream().anyMatch(message ->
             message.getMessage().contains("falling back to JDK-only symbols")),
         "client should be warned when workspace resolution falls back");
+    assertTrue(workspaceLogs.contains(Level.WARNING, "Workspace resolution failed after initialize"));
 
     server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
         new TextDocumentItem(javaFile.toUri().toString(), "java", 1, code)));
@@ -203,6 +234,7 @@ class JvmPlsLanguageServerWorkspaceTest {
     assertTrue(client.messages.stream().anyMatch(message ->
             message.getMessage().contains("Ignoring unsupported workspace URI")),
         "client should be warned about unsupported non-file workspace URIs");
+    assertTrue(workspaceLogs.contains(Level.WARNING, "Ignoring unsupported workspace URI"));
   }
 
   private static void assertDefinitionPresent(JvmPlsLanguageServer server, String uri, String code) throws Exception {

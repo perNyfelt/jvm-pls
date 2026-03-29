@@ -6,6 +6,8 @@ import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.model.Position;
 import se.alipsa.jvmpls.core.server.CoreServer;
 
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -129,6 +131,153 @@ class JavaPluginCompletionsTest {
     }
   }
 
+  @Test
+  void completes_members_from_external_receiver_type() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-java-complete4");
+
+    Path main = dir.resolve("Main.java");
+    String mainCode = """
+      package demo;
+      import java.util.List;
+      class Main {
+        List<String> names;
+        void m() {
+          names.st/*caret*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      Position pos = positionAtMarker(mainCode, "/*caret*/");
+      List<CompletionItem> items = server.completions(mainUri, pos);
+
+      CompletionItem stream = byLabel(items, "stream");
+      assertNotNull(stream, "Expected inherited Collection member 'stream' on List receiver");
+      assertEquals("java.util.stream.Stream", stream.getTypeDetail());
+    }
+  }
+
+  @Test
+  void resolves_star_import_members_without_taking_first_package_blindly() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-java-complete5");
+
+    Path main = dir.resolve("Main.java");
+    String mainCode = """
+      package demo;
+      import java.io.*;
+      import java.util.*;
+      class Main {
+        List<String> names;
+        void m() {
+          names.ad/*caret*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      Position pos = positionAtMarker(mainCode, "/*caret*/");
+      CompletionItem add = byLabel(server.completions(mainUri, pos), "add");
+
+      assertNotNull(add, "Expected List member completion even with multiple star imports");
+      assertEquals("boolean", add.getTypeDetail());
+    }
+  }
+
+  @Test
+  void hides_inaccessible_binary_members_and_dedupes_overridden_members() throws Exception {
+    Path sourceDir = Files.createTempDirectory("jvmpls-java-complete6-src");
+    Path outputDir = Files.createTempDirectory("jvmpls-java-complete6-out");
+    compileJavaSource(sourceDir, outputDir, "demo.Api", """
+        package demo;
+        public class Api {
+          public void open() {}
+          void internal() {}
+          protected void subOnly() {}
+        }
+        """);
+
+    Path main = sourceDir.resolve("Main.java");
+    String mainCode = """
+      package other;
+      import demo.Api;
+      import java.util.List;
+      class Main {
+        Api api;
+        List<String> names;
+        void m() {
+          api./*api*/
+          names.add/*list*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {},
+        List.of(outputDir.toString()),
+        Path.of(System.getProperty("java.home")))) {
+      server.openFile(mainUri, mainCode);
+
+      List<CompletionItem> apiItems = server.completions(mainUri, positionAtMarker(mainCode, "/*api*/"));
+      assertTrue(containsLabel(apiItems, "open"), "Expected public binary member");
+      assertFalse(containsLabel(apiItems, "internal"), "Package-private member should not be visible across packages");
+      assertFalse(containsLabel(apiItems, "subOnly"), "Protected member should not be visible to unrelated classes");
+
+      List<CompletionItem> listItems = server.completions(mainUri, positionAtMarker(mainCode, "/*list*/"));
+      long addCount = listItems.stream().filter(item -> "add".equals(item.getLabel())).count();
+      assertEquals(2, addCount, "Expected exactly the two List.add overloads without inherited duplicates");
+    }
+  }
+
+  @Test
+  void shows_protected_members_to_cross_package_subclasses() throws Exception {
+    Path sourceDir = Files.createTempDirectory("jvmpls-java-complete7-src");
+    Path outputDir = Files.createTempDirectory("jvmpls-java-complete7-out");
+    compileJavaSource(sourceDir, outputDir, "demo.Base", """
+        package demo;
+        public class Base {
+          protected void protectedMethod() {}
+        }
+        """);
+    compileJavaSource(sourceDir, outputDir, "other.Sub", """
+        package other;
+        import demo.Base;
+        public class Sub extends Base {}
+        """);
+
+    Path main = sourceDir.resolve("other/Consumer.java");
+    Files.createDirectories(main.getParent());
+    String mainCode = """
+      package other;
+      class Consumer extends Sub {
+        Consumer sibling;
+        void m() {
+          sibling.pro/*caret*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {},
+        List.of(outputDir.toString()),
+        Path.of(System.getProperty("java.home")))) {
+      server.openFile(mainUri, mainCode);
+
+      List<CompletionItem> items = server.completions(mainUri, positionAtMarker(mainCode, "/*caret*/"));
+      assertTrue(containsLabel(items, "protectedMethod"),
+          "Protected members should remain visible through subtype-qualified access");
+    }
+  }
+
 
   // ---------- helpers ----------
 
@@ -145,6 +294,14 @@ class JavaPluginCompletionsTest {
     return false;
   }
 
+  private static CompletionItem byLabel(List<CompletionItem> items, String label) {
+    if (items == null) return null;
+    for (CompletionItem it : items) {
+      if (it != null && label.equals(it.getLabel())) return it;
+    }
+    return null;
+  }
+
   /** Convert the index of a marker to a Position (line/column), where Position points to the marker start. */
   private static Position positionAtMarker(String text, String marker) {
     int idx = text.indexOf(marker);
@@ -155,5 +312,20 @@ class JavaPluginCompletionsTest {
       if (c == '\n') { line++; col = 0; } else { col++; }
     }
     return new Position(line, col);
+  }
+
+  private static void compileJavaSource(Path sourceDir, Path outputDir, String fqn, String source) throws Exception {
+    JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+    if (compiler == null) {
+      throw new IllegalStateException("system java compiler not available");
+    }
+    Path sourceFile = sourceDir.resolve(fqn.replace('.', '/') + ".java");
+    Files.createDirectories(sourceFile.getParent());
+    Files.writeString(sourceFile, source, StandardCharsets.UTF_8);
+    int result = compiler.run(null, null, null,
+        "-classpath", outputDir.toString(),
+        "-d", outputDir.toString(),
+        sourceFile.toString());
+    assertEquals(0, result, "compilation should succeed");
   }
 }

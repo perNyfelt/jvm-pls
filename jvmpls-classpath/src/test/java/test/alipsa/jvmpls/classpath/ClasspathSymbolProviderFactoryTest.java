@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import se.alipsa.jvmpls.classpath.ClasspathSymbolProviderFactory;
 import se.alipsa.jvmpls.core.SymbolProvider;
 import se.alipsa.jvmpls.core.SymbolProviderContext;
+import se.alipsa.jvmpls.core.model.SymbolInfo;
 
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
@@ -68,6 +69,39 @@ class ClasspathSymbolProviderFactoryTest {
         "provider should not retain stale classpath entries");
     assertTrue(secondProviders.getFirst().findByFqn("demo.Second").isPresent(),
         "provider should rescan updated classpath directories");
+  }
+
+  @Test
+  void exposes_binary_members_and_inherited_members() {
+    ClasspathSymbolProviderFactory factory = new ClasspathSymbolProviderFactory();
+
+    List<SymbolProvider> providers = factory.createProviders(
+        new SymbolProviderContext(List.of(), Path.of(System.getProperty("java.home"))));
+
+    SymbolProvider provider = providers.getFirst();
+    List<SymbolInfo> listMembers = provider.membersOf("java.util.List");
+    List<SymbolInfo> integerMembers = provider.membersOf("java.lang.Integer");
+
+    assertTrue(listMembers.stream().anyMatch(symbol -> "java.util.List#add(java.lang.Object)boolean".equals(symbol.getFqName())),
+        "binary provider should expose declared methods");
+    assertTrue(listMembers.stream().anyMatch(symbol -> symbol.getFqName().startsWith("java.util.Collection#stream(")),
+        "binary provider should expose inherited interface members");
+    assertEquals(1, listMembers.stream()
+            .filter(symbol -> "add".equals(methodName(symbol)) && "(java.lang.Object)boolean".equals(symbol.getSignature()))
+            .count(),
+        "binary provider should keep the nearest declaration when inherited methods share a signature");
+    assertTrue(integerMembers.stream().anyMatch(symbol -> "java.lang.Integer.MAX_VALUE".equals(symbol.getFqName())),
+        "binary provider should expose fields");
+  }
+
+  private static String methodName(SymbolInfo symbol) {
+    String fqn = symbol.getFqName();
+    int hash = fqn.lastIndexOf('#');
+    if (hash < 0) {
+      return fqn;
+    }
+    int open = fqn.indexOf('(', hash + 1);
+    return open < 0 ? fqn.substring(hash + 1) : fqn.substring(hash + 1, open);
   }
 
   private static void compileType(Path sourceDir, Path outputDir, String simpleName) throws Exception {

@@ -1,13 +1,20 @@
 package se.alipsa.jvmpls.core;
 
 import se.alipsa.jvmpls.core.model.*;
+import se.alipsa.jvmpls.core.types.JvmType;
+import se.alipsa.jvmpls.core.types.JvmTypes;
+import se.alipsa.jvmpls.core.types.MethodSignature;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /** Default implementation of CoreFacade. */
 public final class CoreEngine implements CoreFacade {
+  private static final Logger LOG = Logger.getLogger(CoreEngine.class.getName());
 
   private final PluginRegistry plugins;
   private final SymbolIndex index;
@@ -67,6 +74,7 @@ public final class CoreEngine implements CoreFacade {
     try {
       return pl.completions(uri, position, index);
     } catch (Throwable t) {
+      LOG.log(Level.SEVERE, "Completion request failed for " + uri, t);
       return List.of();
     }
   }
@@ -84,6 +92,7 @@ public final class CoreEngine implements CoreFacade {
       SymbolInfo sym = pl.resolveSymbol(uri, token, index);
       return sym == null ? Optional.empty() : Optional.ofNullable(sym.getLocation());
     } catch (Throwable t) {
+      LOG.log(Level.SEVERE, "Definition request failed for " + uri, t);
       return Optional.empty();
     }
   }
@@ -134,15 +143,28 @@ public final class CoreEngine implements CoreFacade {
         index.put(uri, new SymbolInfo(pluginId, kind, classFqn, container, loc, "", Set.of(), List.of()));
       }
       @Override public void reportMethod(String ownerClassFqn, String methodName, String signature, Location loc) {
-        String fqn = ownerClassFqn + "#" + methodName + signature;
-        index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.METHOD, fqn, ownerClassFqn, loc, signature, Set.of(), List.of()));
+        MethodSignature typed = JvmTypes.fromLegacyMethodSignature(signature, Set.of());
+        reportMethod(ownerClassFqn, methodName, typed, loc, Set.of());
       }
       @Override public void reportField(String ownerClassFqn, String fieldName, String typeFqn, Location loc) {
-        String fqn = ownerClassFqn + "." + fieldName;
-        index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.FIELD, fqn, ownerClassFqn, loc, typeFqn, Set.of(), List.of()));
+        JvmType typed = JvmTypes.fromSource(typeFqn, Function.identity());
+        reportField(ownerClassFqn, fieldName, typed, loc, Set.of());
       }
       @Override public void reportAnnotation(String annotationFqn, Location loc) {
         index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.ANNOTATION, annotationFqn, "", loc, "", Set.of(), List.of()));
+      }
+      @Override public void reportMethod(String ownerClassFqn, String methodName, MethodSignature signature,
+                                         Location loc, Set<String> modifiers) {
+        String legacySignature = JvmTypes.toLegacyMethodSignature(signature);
+        String fqn = ownerClassFqn + "#" + methodName + legacySignature;
+        index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.METHOD, fqn, ownerClassFqn, loc,
+            legacySignature, modifiers, signature.typeParameters(), null, signature));
+      }
+      @Override public void reportField(String ownerClassFqn, String fieldName, JvmType type,
+                                        Location loc, Set<String> modifiers) {
+        String fqn = ownerClassFqn + "." + fieldName;
+        index.put(uri, new SymbolInfo(pluginId, SymbolInfo.Kind.FIELD, fqn, ownerClassFqn, loc,
+            type.displayName(), modifiers, List.of(), type, null));
       }
     };
   }

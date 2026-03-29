@@ -4,8 +4,11 @@ import se.alipsa.jvmpls.core.model.SymbolInfo;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class SymbolIndex implements CoreQuery {
+  private static final Logger LOG = Logger.getLogger(SymbolIndex.class.getName());
 
   private final Map<String, SymbolInfo> byFqn = new ConcurrentHashMap<>();
   private final Map<String, Set<String>> fileToDecls = new ConcurrentHashMap<>();
@@ -13,10 +16,13 @@ public final class SymbolIndex implements CoreQuery {
   private final Map<String, Optional<SymbolInfo>> providerByFqnCache = new ConcurrentHashMap<>();
   private final Map<String, List<SymbolInfo>> providerBySimpleNameCache = new ConcurrentHashMap<>();
   private final Map<String, List<SymbolInfo>> providerByPackageCache = new ConcurrentHashMap<>();
+  private final Map<String, List<SymbolInfo>> providerByOwnerCache = new ConcurrentHashMap<>();
+  private final Map<String, List<String>> providerByTypeHierarchyCache = new ConcurrentHashMap<>();
 
   public void put(String fileUri, SymbolInfo sym) {
     byFqn.put(sym.getFqName(), sym);
     fileToDecls.computeIfAbsent(fileUri, k -> ConcurrentHashMap.newKeySet()).add(sym.getFqName());
+    providerByOwnerCache.remove(sym.getContainerFqName());
   }
 
   public void registerProvider(SymbolProvider provider) {
@@ -25,11 +31,22 @@ public final class SymbolIndex implements CoreQuery {
     providerByFqnCache.clear();
     providerBySimpleNameCache.clear();
     providerByPackageCache.clear();
+    providerByOwnerCache.clear();
+    providerByTypeHierarchyCache.clear();
   }
 
   public void removeFile(String fileUri) {
     Set<String> decls = fileToDecls.remove(fileUri);
-    if (decls != null) decls.forEach(byFqn::remove);
+    if (decls != null) {
+      Set<String> affectedOwners = new LinkedHashSet<>();
+      for (String decl : decls) {
+        SymbolInfo removed = byFqn.remove(decl);
+        if (removed != null) {
+          affectedOwners.add(removed.getContainerFqName());
+        }
+      }
+      affectedOwners.forEach(providerByOwnerCache::remove);
+    }
   }
 
   @Override
@@ -66,20 +83,37 @@ public final class SymbolIndex implements CoreQuery {
     }
     for (SymbolInfo sym : byFqn.values()) {
       String fqn = sym.getFqName();
-      int lastDot = fqn.lastIndexOf('.');
-      int lastHash = fqn.lastIndexOf('#');
-      int lastSep = Math.max(lastDot, lastHash);
-      String name = fqn.substring(lastSep + 1);
-      // for methods, fqn contains signature, so strip it
-      int openParen = name.indexOf('(');
-      if (openParen > 0) {
-        name = name.substring(0, openParen);
-      }
+      String name = simpleNameOf(sym);
       if (name.equals(simpleName)) {
         results.put(sym.getFqName(), sym);
       }
     }
     return List.copyOf(results.values());
+  }
+
+  @Override
+  public List<SymbolInfo> membersOf(String ownerFqn) {
+    if (ownerFqn == null || ownerFqn.isBlank()) {
+      return List.of();
+    }
+    Map<String, SymbolInfo> results = new LinkedHashMap<>();
+    for (SymbolInfo external : providerByOwnerCache.computeIfAbsent(ownerFqn, this::resolveExternalMembers)) {
+      results.put(external.getFqName(), external);
+    }
+    for (SymbolInfo symbol : byFqn.values()) {
+      if (ownerFqn.equals(symbol.getContainerFqName())) {
+        results.put(symbol.getFqName(), symbol);
+      }
+    }
+    return List.copyOf(results.values());
+  }
+
+  @Override
+  public List<String> supertypesOf(String typeFqn) {
+    if (typeFqn == null || typeFqn.isBlank()) {
+      return List.of();
+    }
+    return providerByTypeHierarchyCache.computeIfAbsent(typeFqn, this::resolveExternalSupertypes);
   }
 
   private Optional<SymbolInfo> resolveExternalByFqn(String fqn) {
@@ -116,5 +150,48 @@ public final class SymbolIndex implements CoreQuery {
       }
     }
     return List.copyOf(results.values());
+  }
+
+  private List<SymbolInfo> resolveExternalMembers(String ownerFqn) {
+    Map<String, SymbolInfo> results = new LinkedHashMap<>();
+    synchronized (providers) {
+      for (SymbolProvider provider : providers) {
+        try {
+          for (SymbolInfo symbol : provider.membersOf(ownerFqn)) {
+            results.putIfAbsent(symbol.getFqName(), symbol);
+          }
+        } catch (RuntimeException e) {
+          LOG.log(Level.WARNING, "Symbol provider failed while resolving members for " + ownerFqn, e);
+        }
+      }
+    }
+    return List.copyOf(results.values());
+  }
+
+  private List<String> resolveExternalSupertypes(String typeFqn) {
+    LinkedHashSet<String> results = new LinkedHashSet<>();
+    synchronized (providers) {
+      for (SymbolProvider provider : providers) {
+        try {
+          results.addAll(provider.supertypesOf(typeFqn));
+        } catch (RuntimeException e) {
+          LOG.log(Level.WARNING, "Symbol provider failed while resolving supertypes for " + typeFqn, e);
+        }
+      }
+    }
+    return List.copyOf(results);
+  }
+
+  private static String simpleNameOf(SymbolInfo symbol) {
+    String fqn = symbol.getFqName();
+    int lastDot = fqn.lastIndexOf('.');
+    int lastHash = fqn.lastIndexOf('#');
+    int lastSep = Math.max(lastDot, lastHash);
+    String name = fqn.substring(lastSep + 1);
+    int openParen = name.indexOf('(');
+    if (openParen > 0) {
+      name = name.substring(0, openParen);
+    }
+    return name;
   }
 }

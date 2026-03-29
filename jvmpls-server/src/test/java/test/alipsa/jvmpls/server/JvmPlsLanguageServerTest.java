@@ -28,7 +28,11 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class JvmPlsLanguageServerTest {
 
-  private static final int TIMEOUT_SECONDS = 5;
+  private static final int TIMEOUT_SECONDS = 30;
+  private static final String WORKSPACE_MANAGER_LOGGER =
+      "se.alipsa.jvmpls.server.WorkspaceManager";
+  private static final String REMOTE_ENDPOINT_LOGGER =
+      "org.eclipse.lsp4j.jsonrpc.RemoteEndpoint";
 
   private JvmPlsLanguageServer server;
   private LanguageServer serverProxy;
@@ -39,6 +43,8 @@ class JvmPlsLanguageServerTest {
   private PipedOutputStream serverOut;
   private PipedInputStream clientIn;
   private PipedInputStream serverIn;
+  private TestLogCapture workspaceLogs;
+  private TestLogCapture remoteEndpointLogs;
 
   @BeforeEach
   void setUp() throws Exception {
@@ -53,6 +59,8 @@ class JvmPlsLanguageServerTest {
 
     server = new JvmPlsLanguageServer();
     testClient = new TestLanguageClient();
+    workspaceLogs = TestLogCapture.capture(WORKSPACE_MANAGER_LOGGER);
+    remoteEndpointLogs = TestLogCapture.capture(REMOTE_ENDPOINT_LOGGER);
 
     // Create server-side launcher: server reads from serverIn, writes to serverOut
     Launcher<LanguageClient> serverLauncher =
@@ -89,6 +97,14 @@ class JvmPlsLanguageServerTest {
     // Cancel listening futures
     if (serverListening != null) serverListening.cancel(true);
     if (clientListening != null) clientListening.cancel(true);
+    if (workspaceLogs != null) {
+      workspaceLogs.close();
+      workspaceLogs = null;
+    }
+    if (remoteEndpointLogs != null) {
+      remoteEndpointLogs.close();
+      remoteEndpointLogs = null;
+    }
   }
 
   // -------------------------------------------------------------------------

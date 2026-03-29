@@ -32,6 +32,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -41,6 +42,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class JvmPlsLanguageServerLifecycleTest {
 
   private static final String TEST_URI = "file:///Test.java";
+  private static final String TEXT_DOCUMENT_SERVICE_LOGGER =
+      "se.alipsa.jvmpls.server.JvmPlsTextDocumentService";
 
   @Test
   void exit_usesFailureCodeWhenShutdownWasNotRequested() {
@@ -82,12 +85,15 @@ class JvmPlsLanguageServerLifecycleTest {
         () -> { throw new Exception("boom"); },
         observedExitCode::set);
 
-    Object shutdownResult = server.shutdown().get();
-    server.exit();
+    try (TestLogCapture logs = TestLogCapture.capture(JvmPlsLanguageServer.class)) {
+      Object shutdownResult = server.shutdown().get();
+      server.exit();
 
-    assertNull(shutdownResult);
-    assertEquals(0, server.getExitCode());
-    assertEquals(0, observedExitCode.get());
+      assertNull(shutdownResult);
+      assertEquals(0, server.getExitCode());
+      assertEquals(0, observedExitCode.get());
+      assertTrue(logs.contains(Level.SEVERE, "Failed to close core server during shutdown"));
+    }
   }
 
   @Test
@@ -95,35 +101,39 @@ class JvmPlsLanguageServerLifecycleTest {
     CountingCoreFacade core = new CountingCoreFacade();
     JvmPlsLanguageServer server = new JvmPlsLanguageServer(core, () -> { }, exitCode -> { });
 
-    server.shutdown().get();
+    try (TestLogCapture logs = TestLogCapture.capture(TEXT_DOCUMENT_SERVICE_LOGGER)) {
+      server.shutdown().get();
 
-    server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
-        new TextDocumentItem(TEST_URI, "java", 1, "class Test {}")));
-    server.getTextDocumentService().didChange(new DidChangeTextDocumentParams(
-        new VersionedTextDocumentIdentifier(TEST_URI, 2),
-        List.of(new TextDocumentContentChangeEvent("class Test { int x; }"))));
-    server.getTextDocumentService().didClose(
-        new org.eclipse.lsp4j.DidCloseTextDocumentParams(new TextDocumentIdentifier(TEST_URI)));
+      server.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
+          new TextDocumentItem(TEST_URI, "java", 1, "class Test {}")));
+      server.getTextDocumentService().didChange(new DidChangeTextDocumentParams(
+          new VersionedTextDocumentIdentifier(TEST_URI, 2),
+          List.of(new TextDocumentContentChangeEvent("class Test { int x; }"))));
+      server.getTextDocumentService().didClose(
+          new org.eclipse.lsp4j.DidCloseTextDocumentParams(new TextDocumentIdentifier(TEST_URI)));
 
-    CompletionException completionFailure = assertThrows(
-        CompletionException.class,
-        () -> server.getTextDocumentService().completion(
-            new CompletionParams(new TextDocumentIdentifier(TEST_URI), new Position(0, 0)))
-            .join());
-    assertInvalidRequest(completionFailure);
+      CompletionException completionFailure = assertThrows(
+          CompletionException.class,
+          () -> server.getTextDocumentService().completion(
+              new CompletionParams(new TextDocumentIdentifier(TEST_URI), new Position(0, 0)))
+              .join());
+      assertInvalidRequest(completionFailure);
 
-    CompletionException definitionFailure = assertThrows(
-        CompletionException.class,
-        () -> server.getTextDocumentService().definition(
-            new DefinitionParams(new TextDocumentIdentifier(TEST_URI), new Position(0, 0)))
-            .join());
-    assertInvalidRequest(definitionFailure);
+      CompletionException definitionFailure = assertThrows(
+          CompletionException.class,
+          () -> server.getTextDocumentService().definition(
+              new DefinitionParams(new TextDocumentIdentifier(TEST_URI), new Position(0, 0)))
+              .join());
+      assertInvalidRequest(definitionFailure);
 
-    assertEquals(0, core.openInvocations.get());
-    assertEquals(0, core.changeInvocations.get());
-    assertEquals(0, core.closeInvocations.get());
-    assertEquals(0, core.completionInvocations.get());
-    assertEquals(0, core.definitionInvocations.get());
+      assertEquals(0, core.openInvocations.get());
+      assertEquals(0, core.changeInvocations.get());
+      assertEquals(0, core.closeInvocations.get());
+      assertEquals(0, core.completionInvocations.get());
+      assertEquals(0, core.definitionInvocations.get());
+      assertTrue(logs.contains(Level.WARNING, "Ignoring textDocument/didOpen after shutdown"));
+      assertTrue(logs.contains(Level.WARNING, "Rejecting textDocument/completion after shutdown"));
+    }
   }
 
   @Test

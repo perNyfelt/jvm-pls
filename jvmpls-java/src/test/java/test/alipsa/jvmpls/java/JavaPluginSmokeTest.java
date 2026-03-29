@@ -26,16 +26,10 @@ class JavaPluginSmokeTest {
     Files.writeString(file, code, StandardCharsets.UTF_8);
     String uri = file.toUri().toString();
 
-    try (CoreServer server = CoreServer.createDefault(JavaPluginSmokeTest::printDiags)) {
+    try (CoreServer server = CoreServer.createDefault((ignoredUri, diags) -> { })) {
       List<Diagnostic> diags = server.openFile(uri, code);
       // With a valid Java file, our plugin returns no diagnostics
       assertTrue(diags.isEmpty(), "Expected no diagnostics from java plugin");
     }
-  }
-
-  private static void printDiags(String uri, List<Diagnostic> diags) {
-    System.out.println("=== Diagnostics for " + uri + " ===");
-    if (diags.isEmpty()) System.out.println("(none)");
-    else diags.forEach(d -> System.out.println(d.getSeverity() + " " + d.getMessage()));
   }
 }

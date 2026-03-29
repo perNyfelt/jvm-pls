@@ -37,8 +37,8 @@
       </dependency>
       <dependency>
         <groupId>se.alipsa</groupId>
-        <artifactId>maven-3.9.11-utils</artifactId>
-        <version>1.2.0</version>
+        <artifactId>maven-utils</artifactId>
+        <version>1.4.0</version>
       </dependency>
       <dependency>
         <groupId>org.gradle</groupId>
