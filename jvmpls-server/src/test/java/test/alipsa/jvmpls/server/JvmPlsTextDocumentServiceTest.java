@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -50,13 +51,16 @@ class JvmPlsTextDocumentServiceTest {
     core.completionFailure = new IllegalStateException("boom");
     JvmPlsTextDocumentService service = new JvmPlsTextDocumentService(core);
 
-    Either<List<org.eclipse.lsp4j.CompletionItem>, CompletionList> result =
-        service.completion(new CompletionParams(new TextDocumentIdentifier(TEST_URI),
-                new Position(0, 0)))
-            .get(5, TimeUnit.SECONDS);
+    try (TestLogCapture logs = TestLogCapture.capture(JvmPlsTextDocumentService.class)) {
+      Either<List<org.eclipse.lsp4j.CompletionItem>, CompletionList> result =
+          service.completion(new CompletionParams(new TextDocumentIdentifier(TEST_URI),
+                  new Position(0, 0)))
+              .get(5, TimeUnit.SECONDS);
 
-    assertTrue(result.isLeft(), "completion fallback should return a left list");
-    assertTrue(result.getLeft().isEmpty(), "completion fallback should be empty");
+      assertTrue(result.isLeft(), "completion fallback should return a left list");
+      assertTrue(result.getLeft().isEmpty(), "completion fallback should be empty");
+      assertTrue(logs.contains(Level.SEVERE, "Completion request failed"));
+    }
   }
 
   @Test
@@ -87,14 +91,17 @@ class JvmPlsTextDocumentServiceTest {
         new Range(null, new se.alipsa.jvmpls.core.model.Position(1, 7))));
     JvmPlsTextDocumentService service = new JvmPlsTextDocumentService(core);
 
-    Either<List<? extends Location>, List<? extends org.eclipse.lsp4j.LocationLink>> result =
-        service.definition(new DefinitionParams(new TextDocumentIdentifier(TEST_URI),
-                new Position(0, 0)))
-            .get(5, TimeUnit.SECONDS);
+    try (TestLogCapture logs = TestLogCapture.capture(JvmPlsTextDocumentService.class)) {
+      Either<List<? extends Location>, List<? extends org.eclipse.lsp4j.LocationLink>> result =
+          service.definition(new DefinitionParams(new TextDocumentIdentifier(TEST_URI),
+                  new Position(0, 0)))
+              .get(5, TimeUnit.SECONDS);
 
-    assertTrue(result.isLeft(), "definition fallback should return locations on the left side");
-    assertNotNull(result.getLeft());
-    assertFalse(result.getLeft().iterator().hasNext(), "definition fallback should be empty");
+      assertTrue(result.isLeft(), "definition fallback should return locations on the left side");
+      assertNotNull(result.getLeft());
+      assertFalse(result.getLeft().iterator().hasNext(), "definition fallback should be empty");
+      assertTrue(logs.contains(Level.SEVERE, "Definition request failed"));
+    }
   }
 
   private static final class FakeCoreFacade implements CoreFacade {

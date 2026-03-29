@@ -24,23 +24,9 @@ class CoreServerSmokeTest {
     Files.writeString(file, code, StandardCharsets.UTF_8);
     String uri = file.toUri().toString();
 
-    try (CoreServer server = CoreServer.createDefault(CoreServerSmokeTest::printDiagnostics)) {
+    try (CoreServer server = CoreServer.createDefault((ignoredUri, diagnostics) -> { })) {
       List<Diagnostic> diags = server.openFile(uri, code);
-      printDiagnostics(uri, diags);
-    }
-  }
-
-  private static void printDiagnostics(String uri, List<Diagnostic> diagnostics) {
-    System.out.println("=== Diagnostics for " + uri + " ===");
-    if (diagnostics == null || diagnostics.isEmpty()) {
-      System.out.println("(none)");
-      return;
-    }
-    for (Diagnostic d : diagnostics) {
-      var r = d.getRange();
-      System.out.printf("[%s] %s:%d:%d-%d:%d %s (source=%s, code=%s)%n",
-          d.getSeverity(), uri, r.start.line, r.start.column, r.end.line, r.end.column,
-          d.getMessage(), d.getSource(), d.getCode());
+      org.junit.jupiter.api.Assertions.assertTrue(diags.isEmpty());
     }
   }
 }
