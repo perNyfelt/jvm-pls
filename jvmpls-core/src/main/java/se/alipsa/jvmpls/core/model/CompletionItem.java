@@ -7,25 +7,42 @@ public final class CompletionItem {
   private final Location location;    // optional: where the symbol is declared
   private final java.util.List<TextEdit> additionalTextEdits;
   private final String typeDetail;
+  private final SyntheticOrigin syntheticOrigin;
+  private final InferenceConfidence inferenceConfidence;
 
   public CompletionItem(String label, String detail, String insertText, Location loc) {
-    this(label, detail, insertText, loc, java.util.List.of(), "");
+    this(label, detail, insertText, loc, java.util.List.of(), "",
+        SyntheticOrigin.NONE, InferenceConfidence.DETERMINISTIC);
   }
 
   public CompletionItem(String label, String detail, String insertText, Location loc,
                         java.util.List<TextEdit> additionalTextEdits) {
-    this(label, detail, insertText, loc, additionalTextEdits, "");
+    this(label, detail, insertText, loc, additionalTextEdits, "",
+        SyntheticOrigin.NONE, InferenceConfidence.DETERMINISTIC);
   }
 
   public CompletionItem(String label, String detail, String insertText, Location loc,
                         java.util.List<TextEdit> additionalTextEdits,
                         String typeDetail) {
+    this(label, detail, insertText, loc, additionalTextEdits, typeDetail,
+        SyntheticOrigin.NONE, InferenceConfidence.DETERMINISTIC);
+  }
+
+  public CompletionItem(String label, String detail, String insertText, Location loc,
+                        java.util.List<TextEdit> additionalTextEdits,
+                        String typeDetail,
+                        SyntheticOrigin syntheticOrigin,
+                        InferenceConfidence inferenceConfidence) {
     this.label = label;
     this.detail = detail;
     this.insertText = insertText;
     this.location = loc;
     this.additionalTextEdits = additionalTextEdits;
     this.typeDetail = typeDetail == null ? "" : typeDetail;
+    this.syntheticOrigin = syntheticOrigin == null ? SyntheticOrigin.NONE : syntheticOrigin;
+    this.inferenceConfidence = inferenceConfidence == null
+        ? InferenceConfidence.DETERMINISTIC
+        : inferenceConfidence;
   }
 
   public java.util.List<TextEdit> getAdditionalTextEdits() {
@@ -50,5 +67,13 @@ public final class CompletionItem {
 
   public String getTypeDetail() {
     return typeDetail;
+  }
+
+  public SyntheticOrigin getSyntheticOrigin() {
+    return syntheticOrigin;
+  }
+
+  public InferenceConfidence getInferenceConfidence() {
+    return inferenceConfidence;
   }
 }

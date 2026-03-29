@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 public final class SymbolInfo {
-  public enum Kind { PACKAGE, CLASS, INTERFACE, ENUM, METHOD, FIELD, ANNOTATION }
+  public enum Kind { PACKAGE, CLASS, INTERFACE, ENUM, METHOD, CONSTRUCTOR, FIELD, ANNOTATION }
 
   private final String languageId;     // plugin id(), e.g. "java"
   private final Kind kind;
@@ -19,13 +19,15 @@ public final class SymbolInfo {
   private final List<String> typeParameters;
   private final JvmType resolvedType;
   private final MethodSignature methodSignature;
+  private final SyntheticOrigin syntheticOrigin;
+  private final InferenceConfidence inferenceConfidence;
 
   public SymbolInfo(String languageId, Kind kind, String fqName,
                     String containerFqName, Location location,
                     String signature, Set<String> modifiers,
                     List<String> typeParameters) {
     this(languageId, kind, fqName, containerFqName, location, signature, modifiers,
-        typeParameters, null, null);
+        typeParameters, null, null, SyntheticOrigin.NONE, InferenceConfidence.DETERMINISTIC);
   }
 
   public SymbolInfo(String languageId, Kind kind, String fqName,
@@ -34,6 +36,19 @@ public final class SymbolInfo {
                     List<String> typeParameters,
                     JvmType resolvedType,
                     MethodSignature methodSignature) {
+    this(languageId, kind, fqName, containerFqName, location, signature, modifiers,
+        typeParameters, resolvedType, methodSignature,
+        SyntheticOrigin.NONE, InferenceConfidence.DETERMINISTIC);
+  }
+
+  public SymbolInfo(String languageId, Kind kind, String fqName,
+                    String containerFqName, Location location,
+                    String signature, Set<String> modifiers,
+                    List<String> typeParameters,
+                    JvmType resolvedType,
+                    MethodSignature methodSignature,
+                    SyntheticOrigin syntheticOrigin,
+                    InferenceConfidence inferenceConfidence) {
     this.languageId = languageId;
     this.kind = kind;
     this.fqName = fqName;
@@ -44,6 +59,10 @@ public final class SymbolInfo {
     this.typeParameters = typeParameters;
     this.resolvedType = resolvedType;
     this.methodSignature = methodSignature;
+    this.syntheticOrigin = syntheticOrigin == null ? SyntheticOrigin.NONE : syntheticOrigin;
+    this.inferenceConfidence = inferenceConfidence == null
+        ? InferenceConfidence.DETERMINISTIC
+        : inferenceConfidence;
   }
 
   public String getLanguageId() { return languageId; }
@@ -56,4 +75,6 @@ public final class SymbolInfo {
   public List<String> getTypeParameters() { return typeParameters; }
   public JvmType getResolvedType() { return resolvedType; }
   public MethodSignature getMethodSignature() { return methodSignature; }
+  public SyntheticOrigin getSyntheticOrigin() { return syntheticOrigin; }
+  public InferenceConfidence getInferenceConfidence() { return inferenceConfidence; }
 }

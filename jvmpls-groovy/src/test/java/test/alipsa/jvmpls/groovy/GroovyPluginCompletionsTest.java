@@ -286,6 +286,143 @@ class GroovyPluginCompletionsTest {
     }
   }
 
+  @Test
+  void completes_builder_delegate_metaclass_category_and_mixin_members() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-groovy-phase5");
+
+    Path person = dir.resolve("Person.groovy");
+    String personCode = """
+      package demo
+      import groovy.transform.builder.Builder
+      @Builder
+      class Person {
+        String name
+      }
+      """;
+    Files.writeString(person, personCode, StandardCharsets.UTF_8);
+    String personUri = person.toUri().toString();
+
+    Path main = dir.resolve("Main.groovy");
+    String mainCode = """
+      package demo
+      import groovy.util.logging.Log
+      import groovy.lang.Delegate
+      import groovy.lang.Mixin
+
+      class Worker {
+        String hello() { "hi" }
+      }
+
+      class Thing {}
+      Thing.metaClass.bar = { -> 1 }
+
+      class StringCategory {
+        static String shout(String self) { self.toUpperCase() }
+      }
+
+      class Extra {
+        String extra() { "x" }
+      }
+
+      @Mixin(Extra)
+      class Mixed {}
+
+      @Log
+      class Main {
+        @Delegate Worker worker = new Worker()
+        PersonBuilder builder = Person.builder()
+        Thing thing = new Thing()
+        String value = "x"
+        Mixed mixed = new Mixed()
+        Main self
+
+        void run() {
+          builder.na/*builder*/
+          self.hel/*delegate*/
+          thing.ba/*meta*/
+          log.in/*log*/
+          use(StringCategory) {
+            value.sh/*categoryInside*/
+          }
+          value.sh/*categoryOutside*/
+          mixed.ex/*mixin*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(personUri, personCode);
+      server.openFile(mainUri, mainCode);
+
+      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*builder*/")), "name"),
+          "builder methods should be visible on synthetic builder type");
+      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*delegate*/")), "hello"),
+          "delegate methods should be visible on owner type");
+      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*meta*/")), "bar"),
+          "metaClass-added methods should be visible on the target type");
+      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*log*/")), "info"),
+          "log transform should expose java.util.logging.Logger members");
+      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*categoryInside*/")), "shout"),
+          "category methods should be visible inside use(Category) scope");
+      assertNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*categoryOutside*/")), "shout"),
+          "category methods should not leak outside the use(Category) scope");
+      assertNotNull(byLabel(server.completions(mainUri, positionAtMarker(mainCode, "/*mixin*/")), "extra"),
+          "mixin methods should be visible on the mixed target type");
+    }
+  }
+
+  @Test
+  void emits_strict_static_undefined_member_diagnostics_without_penalizing_dynamic_classes() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-groovy-phase5-diags");
+
+    Path staticFile = dir.resolve("StrictMain.groovy");
+    String staticCode = """
+      package demo
+      import groovy.transform.CompileStatic
+
+      @CompileStatic
+      class StrictMain {
+        String value = "x"
+        void run() {
+          value.missingMethod()
+          value.missingProperty
+        }
+      }
+      """;
+    Files.writeString(staticFile, staticCode, StandardCharsets.UTF_8);
+
+    Path dynamicFile = dir.resolve("DynamicMain.groovy");
+    String dynamicCode = """
+      package demo
+
+      class DynamicMain {
+        def methodMissing(String name, Object args) { null }
+        def propertyMissing(String name) { null }
+
+        void run() {
+          missingMethod()
+          missingProperty
+        }
+      }
+      """;
+    Files.writeString(dynamicFile, dynamicCode, StandardCharsets.UTF_8);
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      List<Diagnostic> strictDiags = server.openFile(staticFile.toUri().toString(), staticCode);
+      List<Diagnostic> dynamicDiags = server.openFile(dynamicFile.toUri().toString(), dynamicCode);
+
+      assertTrue(strictDiags.stream().anyMatch(diag -> "undefined-method".equals(diag.getCode())),
+          "CompileStatic code should report missing methods");
+      assertTrue(strictDiags.stream().anyMatch(diag -> "undefined-property".equals(diag.getCode())),
+          "CompileStatic code should report missing properties");
+      assertTrue(dynamicDiags.stream().noneMatch(diag -> "undefined-method".equals(diag.getCode())
+          || "undefined-property".equals(diag.getCode())),
+          "Dynamic classes should not emit synthetic undefined-member diagnostics");
+    }
+  }
+
 
   // ---------- helpers ----------
 

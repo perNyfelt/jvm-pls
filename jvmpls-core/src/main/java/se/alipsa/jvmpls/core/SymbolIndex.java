@@ -109,6 +109,13 @@ public final class SymbolIndex implements CoreQuery {
   }
 
   @Override
+  public List<SymbolInfo> constructorsOf(String ownerFqn) {
+    return membersOf(ownerFqn).stream()
+        .filter(symbol -> symbol.getKind() == SymbolInfo.Kind.CONSTRUCTOR)
+        .toList();
+  }
+
+  @Override
   public List<String> supertypesOf(String typeFqn) {
     if (typeFqn == null || typeFqn.isBlank()) {
       return List.of();
@@ -191,6 +198,11 @@ public final class SymbolIndex implements CoreQuery {
     int openParen = name.indexOf('(');
     if (openParen > 0) {
       name = name.substring(0, openParen);
+    }
+    if ("<init>".equals(name)) {
+      String container = symbol.getContainerFqName();
+      int containerLastDot = container.lastIndexOf('.');
+      return containerLastDot < 0 ? container : container.substring(containerLastDot + 1);
     }
     return name;
   }
