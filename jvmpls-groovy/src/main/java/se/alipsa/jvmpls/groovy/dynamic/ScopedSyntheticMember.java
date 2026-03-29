@@ -6,6 +6,12 @@ import se.alipsa.jvmpls.core.model.Position;
 import se.alipsa.jvmpls.core.model.Range;
 import se.alipsa.jvmpls.core.model.SymbolInfo;
 
+/**
+ * A synthetic member that is only visible inside a lexical source range.
+ *
+ * <p>This is used for Groovy constructs such as {@code use(Category) { ... }} where synthetic
+ * members must not leak into the file-global symbol index.
+ */
 public record ScopedSyntheticMember(String targetTypeFqn, Range scope, SymbolInfo symbol) {
 
   public ScopedSyntheticMember {

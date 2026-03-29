@@ -16,6 +16,12 @@ import se.alipsa.jvmpls.core.model.SymbolInfo;
 import se.alipsa.jvmpls.core.model.SyntheticOrigin;
 import se.alipsa.jvmpls.core.types.JvmTypes;
 
+/**
+ * Resolves visible members for a Groovy receiver at a specific file position.
+ *
+ * <p>The resolver merges indexed members, scoped synthetic members, and supertypes while keeping
+ * synthetic provenance/confidence ordering stable for completion, definition, and diagnostics.
+ */
 public final class GroovyMemberResolver {
 
   private final CoreQuery core;

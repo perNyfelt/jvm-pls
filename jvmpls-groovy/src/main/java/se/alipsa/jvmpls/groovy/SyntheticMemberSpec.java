@@ -11,6 +11,12 @@ import se.alipsa.jvmpls.core.model.SyntheticOrigin;
 import se.alipsa.jvmpls.core.types.JvmType;
 import se.alipsa.jvmpls.core.types.MethodSignature;
 
+/**
+ * Describes a synthetic Groovy member before it is reported into the shared symbol index.
+ *
+ * <p>Phase 5 transform and dynamic analyzers use this record as the handoff format for synthetic
+ * classes, fields, methods, and constructors.
+ */
 public record SyntheticMemberSpec(
     SymbolInfo.Kind kind,
     String ownerFqn,

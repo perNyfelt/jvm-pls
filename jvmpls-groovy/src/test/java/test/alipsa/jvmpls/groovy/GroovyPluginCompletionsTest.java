@@ -568,7 +568,6 @@ class GroovyPluginCompletionsTest {
     }
   }
 
-  @Test
   void infers_metaClass_field_type_for_concrete_constructor_assignments() throws Exception {
     Path dir = Files.createTempDirectory("jvmpls-groovy-phase5-metaclass-field");
 

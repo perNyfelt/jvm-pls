@@ -56,6 +56,8 @@ final class ConstructorTransformAnalyzer implements TransformAnalyzer {
     if (constructor.getParameters().length != propertyTypes.size()) {
       return false;
     }
+    // Constructor overload identity is type-based on the JVM; parameter names do not distinguish
+    // generated and explicit constructors.
     for (int i = 0; i < constructor.getParameters().length; i++) {
       if (!propertyTypes
           .get(i)

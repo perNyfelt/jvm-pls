@@ -77,6 +77,8 @@ final class DelegateTransformAnalyzer {
       return samePackage(currentOwner, declaringType);
     }
     if (modifiers.contains("protected")) {
+      // Delegation generates qualified receiver calls on the delegate field, so cross-package
+      // protected access must satisfy both the subclass check and the qualified-receiver rule.
       return samePackage(currentOwner, declaringType)
           || (isSubtypeOf(currentOwner, declaringType, core)
               && isSubtypeOf(receiverType, currentOwner, core));
