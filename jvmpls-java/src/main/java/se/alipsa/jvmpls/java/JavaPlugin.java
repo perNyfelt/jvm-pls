@@ -347,7 +347,8 @@ public final class JavaPlugin implements JvmLangPlugin {
   }
 
   private static void addMember(java.util.Map<String, CompletionItem> out, SymbolInfo s, String label) {
-    if (out.containsKey(s.getFqName())) return;
+    String key = memberCompletionKey(s, label);
+    if (out.containsKey(key)) return;
     String typeDetail = s.getResolvedType() != null
         ? s.getResolvedType().displayName()
         : s.getMethodSignature() != null
@@ -356,7 +357,7 @@ public final class JavaPlugin implements JvmLangPlugin {
     String detail = s.getMethodSignature() != null
         ? s.getContainerFqName() + JvmTypes.toLegacyMethodSignature(s.getMethodSignature())
         : s.getContainerFqName();
-    out.put(s.getFqName(), new CompletionItem(label, detail, label, s.getLocation(), List.of(), typeDetail));
+    out.put(key, new CompletionItem(label, detail, label, s.getLocation(), List.of(), typeDetail));
   }
   private static void add(java.util.Map<String, CompletionItem> out, SymbolInfo s) {
     add(out, s, null);
@@ -477,9 +478,13 @@ public final class JavaPlugin implements JvmLangPlugin {
   }
 
   private static Set<String> modifiers(Set<Modifier> flags) {
-    return flags.stream()
+    LinkedHashSet<String> modifiers = flags.stream()
         .map(flag -> flag.name().toLowerCase(Locale.ROOT))
         .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    if (!modifiers.contains("public") && !modifiers.contains("protected") && !modifiers.contains("private")) {
+      modifiers.add("package-private");
+    }
+    return Set.copyOf(modifiers);
   }
 
   private static String primaryClassFqn(String content) {
@@ -494,13 +499,38 @@ public final class JavaPlugin implements JvmLangPlugin {
 
   private static boolean isVisible(SymbolInfo member, String currentOwner) {
     Set<String> modifiers = member.getModifiers();
-    if (modifiers == null || modifiers.isEmpty()) {
-      return true;
-    }
     if (member.getContainerFqName().equals(currentOwner)) {
       return true;
     }
-    return !modifiers.contains("private");
+    if (modifiers == null) {
+      return false;
+    }
+    if (modifiers.contains("public")) {
+      return true;
+    }
+    if (modifiers.contains("private")) {
+      return false;
+    }
+    String currentPackage = packageName(currentOwner);
+    String ownerPackage = packageName(member.getContainerFqName());
+    if (modifiers.contains("protected") || modifiers.contains("package-private")) {
+      return Objects.equals(currentPackage, ownerPackage);
+    }
+    return false;
+  }
+
+  private static String packageName(String fqn) {
+    int lastDot = fqn.lastIndexOf('.');
+    return lastDot < 0 ? "" : fqn.substring(0, lastDot);
+  }
+
+  private static String memberCompletionKey(SymbolInfo symbol, String label) {
+    return switch (symbol.getKind()) {
+      case FIELD -> "FIELD:" + label;
+      case METHOD -> "METHOD:" + label + ":" +
+          (symbol.getMethodSignature() == null ? symbol.getSignature() : JvmTypes.toLegacyMethodSignature(symbol.getMethodSignature()));
+      default -> symbol.getFqName();
+    };
   }
 
 }

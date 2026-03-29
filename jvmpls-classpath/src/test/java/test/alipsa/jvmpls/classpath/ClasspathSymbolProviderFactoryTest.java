@@ -86,8 +86,22 @@ class ClasspathSymbolProviderFactoryTest {
         "binary provider should expose declared methods");
     assertTrue(listMembers.stream().anyMatch(symbol -> symbol.getFqName().startsWith("java.util.Collection#stream(")),
         "binary provider should expose inherited interface members");
+    assertEquals(1, listMembers.stream()
+            .filter(symbol -> "add".equals(methodName(symbol)) && "(java.lang.Object)boolean".equals(symbol.getSignature()))
+            .count(),
+        "binary provider should keep the nearest declaration when inherited methods share a signature");
     assertTrue(integerMembers.stream().anyMatch(symbol -> "java.lang.Integer.MAX_VALUE".equals(symbol.getFqName())),
         "binary provider should expose fields");
+  }
+
+  private static String methodName(SymbolInfo symbol) {
+    String fqn = symbol.getFqName();
+    int hash = fqn.lastIndexOf('#');
+    if (hash < 0) {
+      return fqn;
+    }
+    int open = fqn.indexOf('(', hash + 1);
+    return open < 0 ? fqn.substring(hash + 1) : fqn.substring(hash + 1, open);
   }
 
   private static void compileType(Path sourceDir, Path outputDir, String simpleName) throws Exception {

@@ -521,7 +521,8 @@ public final class GroovyPlugin implements JvmLangPlugin {
   }
 
   private static void addMember(java.util.Map<String, CompletionItem> out, SymbolInfo s, String label) {
-    if (out.containsKey(s.getFqName())) return;
+    String key = memberCompletionKey(s, label);
+    if (out.containsKey(key)) return;
     String typeDetail = s.getResolvedType() != null
         ? s.getResolvedType().displayName()
         : s.getMethodSignature() != null
@@ -530,7 +531,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     String detail = s.getMethodSignature() != null
         ? s.getContainerFqName() + JvmTypes.toLegacyMethodSignature(s.getMethodSignature())
         : s.getContainerFqName();
-    out.put(s.getFqName(), new CompletionItem(label, detail, label, s.getLocation(), List.of(), typeDetail));
+    out.put(key, new CompletionItem(label, detail, label, s.getLocation(), List.of(), typeDetail));
   }
 
   // Backward-compat for places that don't care about edits
@@ -680,6 +681,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     if (Modifier.isPublic(flags)) out.add("public");
     if (Modifier.isProtected(flags)) out.add("protected");
     if (Modifier.isPrivate(flags)) out.add("private");
+    if (!Modifier.isPublic(flags) && !Modifier.isProtected(flags) && !Modifier.isPrivate(flags)) out.add("package-private");
     if (Modifier.isAbstract(flags)) out.add("abstract");
     if (Modifier.isFinal(flags)) out.add("final");
     if (Modifier.isStatic(flags)) out.add("static");
@@ -688,13 +690,33 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private static boolean isVisible(SymbolInfo member, String currentOwnerFqn) {
     Set<String> modifiers = member.getModifiers();
-    if (modifiers == null || modifiers.isEmpty()) {
-      return true;
-    }
     if (member.getContainerFqName().equals(currentOwnerFqn)) {
       return true;
     }
-    return !modifiers.contains("private");
+    if (modifiers == null) {
+      return false;
+    }
+    if (modifiers.contains("public")) {
+      return true;
+    }
+    if (modifiers.contains("private")) {
+      return false;
+    }
+    String currentPackage = ownerPkg(currentOwnerFqn);
+    String ownerPackage = ownerPkg(member.getContainerFqName());
+    if (modifiers.contains("protected") || modifiers.contains("package-private")) {
+      return Objects.equals(currentPackage, ownerPackage);
+    }
+    return false;
+  }
+
+  private static String memberCompletionKey(SymbolInfo symbol, String label) {
+    return switch (symbol.getKind()) {
+      case FIELD -> "FIELD:" + label;
+      case METHOD -> "METHOD:" + label + ":" +
+          (symbol.getMethodSignature() == null ? symbol.getSignature() : JvmTypes.toLegacyMethodSignature(symbol.getMethodSignature()));
+      default -> symbol.getFqName();
+    };
   }
 
   /** Build/augment ctx if parse failed earlier */

@@ -101,6 +101,7 @@ public final class BinaryTypeReader {
       if ((access & Opcodes.ACC_PUBLIC) != 0) out.add("public");
       if ((access & Opcodes.ACC_PROTECTED) != 0) out.add("protected");
       if ((access & Opcodes.ACC_PRIVATE) != 0) out.add("private");
+      if ((access & (Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED | Opcodes.ACC_PRIVATE)) == 0) out.add("package-private");
       if ((access & Opcodes.ACC_ABSTRACT) != 0) out.add("abstract");
       if ((access & Opcodes.ACC_FINAL) != 0) out.add("final");
       if ((access & Opcodes.ACC_STATIC) != 0) out.add("static");

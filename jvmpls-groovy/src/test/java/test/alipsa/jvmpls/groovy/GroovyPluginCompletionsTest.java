@@ -6,6 +6,8 @@ import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.model.Position;
 import se.alipsa.jvmpls.core.server.CoreServer;
 
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -197,6 +199,52 @@ class GroovyPluginCompletionsTest {
     }
   }
 
+  @Test
+  void hides_inaccessible_binary_members_and_dedupes_overridden_members() throws Exception {
+    Path sourceDir = Files.createTempDirectory("jvmpls-groovy-complete6-src");
+    Path outputDir = Files.createTempDirectory("jvmpls-groovy-complete6-out");
+    compileJavaSource(sourceDir, outputDir, "demo.Api", """
+        package demo;
+        public class Api {
+          public void open() {}
+          void internal() {}
+          protected void subOnly() {}
+        }
+        """);
+
+    Path main = sourceDir.resolve("Main.groovy");
+    String mainCode = """
+      package other
+      import demo.Api
+      import java.util.List
+      class Main {
+        Api api
+        List<String> names = []
+        void run() {
+          api./*api*/
+          names.add/*list*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {},
+        List.of(outputDir.toString()),
+        Path.of(System.getProperty("java.home")))) {
+      server.openFile(mainUri, mainCode);
+
+      List<CompletionItem> apiItems = server.completions(mainUri, positionAtMarker(mainCode, "/*api*/"));
+      assertTrue(containsLabel(apiItems, "open"), "Expected public binary member");
+      assertFalse(containsLabel(apiItems, "internal"), "Package-private member should not be visible across packages");
+      assertFalse(containsLabel(apiItems, "subOnly"), "Protected member should not be visible to unrelated classes");
+
+      List<CompletionItem> listItems = server.completions(mainUri, positionAtMarker(mainCode, "/*list*/"));
+      long addCount = listItems.stream().filter(item -> "add".equals(item.getLabel())).count();
+      assertEquals(2, addCount, "Expected exactly the two List.add overloads without inherited duplicates");
+    }
+  }
+
 
   // ---------- helpers ----------
 
@@ -230,5 +278,19 @@ class GroovyPluginCompletionsTest {
       if (c == '\n') { line++; col = 0; } else { col++; }
     }
     return new Position(line, col);
+  }
+
+  private static void compileJavaSource(Path sourceDir, Path outputDir, String fqn, String source) throws Exception {
+    JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+    if (compiler == null) {
+      throw new IllegalStateException("system java compiler not available");
+    }
+    Path sourceFile = sourceDir.resolve(fqn.replace('.', '/') + ".java");
+    Files.createDirectories(sourceFile.getParent());
+    Files.writeString(sourceFile, source, StandardCharsets.UTF_8);
+    int result = compiler.run(null, null, null,
+        "-d", outputDir.toString(),
+        sourceFile.toString());
+    assertEquals(0, result, "compilation should succeed");
   }
 }

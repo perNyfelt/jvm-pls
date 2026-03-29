@@ -95,7 +95,7 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
         continue;
       }
       SymbolInfo symbol = materializeMember(owner, member);
-      results.putIfAbsent(symbol.getFqName(), symbol);
+      results.putIfAbsent(memberIdentity(symbol), symbol);
     }
     if (owner.superclassFqName() != null && !owner.superclassFqName().isBlank()) {
       catalog.findByFqn(owner.superclassFqName()).ifPresent(parent -> collectMembers(parent, results, visited));
@@ -103,6 +103,29 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
     for (String interfaceFqName : owner.interfaceFqNames()) {
       catalog.findByFqn(interfaceFqName).ifPresent(parent -> collectMembers(parent, results, visited));
     }
+  }
+
+  private static String memberIdentity(SymbolInfo symbol) {
+    return switch (symbol.getKind()) {
+      case FIELD -> "FIELD:" + fieldName(symbol.getFqName());
+      case METHOD -> "METHOD:" + methodName(symbol.getFqName()) + ":" +
+          (symbol.getMethodSignature() == null ? symbol.getSignature() : JvmTypes.toLegacyMethodSignature(symbol.getMethodSignature()));
+      default -> symbol.getKind() + ":" + symbol.getFqName();
+    };
+  }
+
+  private static String fieldName(String fqn) {
+    int lastDot = fqn.lastIndexOf('.');
+    return lastDot < 0 ? fqn : fqn.substring(lastDot + 1);
+  }
+
+  private static String methodName(String fqn) {
+    int hash = fqn.lastIndexOf('#');
+    if (hash < 0) {
+      return fqn;
+    }
+    int open = fqn.indexOf('(', hash + 1);
+    return open < 0 ? fqn.substring(hash + 1) : fqn.substring(hash + 1, open);
   }
 
   private SymbolInfo materializeMember(ScannedTypeDescriptor owner, BinaryMemberDetails member) {
