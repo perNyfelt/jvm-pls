@@ -16,13 +16,24 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class BinaryTypeReader {
+  private static final Logger LOG = Logger.getLogger(BinaryTypeReader.class.getName());
 
   private final ConcurrentMap<String, BinaryTypeDetails> cache = new ConcurrentHashMap<>();
 
   public BinaryTypeDetails read(String resourceUri) {
-    return cache.computeIfAbsent(resourceUri, this::readUncached);
+    BinaryTypeDetails cached = cache.get(resourceUri);
+    if (cached != null) {
+      return cached;
+    }
+    BinaryTypeDetails details = readUncached(resourceUri);
+    if (!details.isEmpty()) {
+      cache.put(resourceUri, details);
+    }
+    return details;
   }
 
   private BinaryTypeDetails readUncached(String resourceUri) {
@@ -36,7 +47,8 @@ public final class BinaryTypeReader {
           List.of(),
           List.copyOf(visitor.members));
     } catch (IOException | IllegalArgumentException e) {
-      return new BinaryTypeDetails("", Set.of(), List.of(), List.of());
+      LOG.log(Level.WARNING, "Failed to read binary type metadata from " + resourceUri, e);
+      return BinaryTypeDetails.empty();
     }
   }
 

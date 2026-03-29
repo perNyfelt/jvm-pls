@@ -4,8 +4,11 @@ import se.alipsa.jvmpls.core.model.SymbolInfo;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class SymbolIndex implements CoreQuery {
+  private static final Logger LOG = Logger.getLogger(SymbolIndex.class.getName());
 
   private final Map<String, SymbolInfo> byFqn = new ConcurrentHashMap<>();
   private final Map<String, Set<String>> fileToDecls = new ConcurrentHashMap<>();
@@ -18,6 +21,7 @@ public final class SymbolIndex implements CoreQuery {
   public void put(String fileUri, SymbolInfo sym) {
     byFqn.put(sym.getFqName(), sym);
     fileToDecls.computeIfAbsent(fileUri, k -> ConcurrentHashMap.newKeySet()).add(sym.getFqName());
+    providerByOwnerCache.remove(sym.getContainerFqName());
   }
 
   public void registerProvider(SymbolProvider provider) {
@@ -31,7 +35,16 @@ public final class SymbolIndex implements CoreQuery {
 
   public void removeFile(String fileUri) {
     Set<String> decls = fileToDecls.remove(fileUri);
-    if (decls != null) decls.forEach(byFqn::remove);
+    if (decls != null) {
+      Set<String> affectedOwners = new LinkedHashSet<>();
+      for (String decl : decls) {
+        SymbolInfo removed = byFqn.remove(decl);
+        if (removed != null) {
+          affectedOwners.add(removed.getContainerFqName());
+        }
+      }
+      affectedOwners.forEach(providerByOwnerCache::remove);
+    }
   }
 
   @Override
@@ -133,8 +146,12 @@ public final class SymbolIndex implements CoreQuery {
     Map<String, SymbolInfo> results = new LinkedHashMap<>();
     synchronized (providers) {
       for (SymbolProvider provider : providers) {
-        for (SymbolInfo symbol : provider.membersOf(ownerFqn)) {
-          results.putIfAbsent(symbol.getFqName(), symbol);
+        try {
+          for (SymbolInfo symbol : provider.membersOf(ownerFqn)) {
+            results.putIfAbsent(symbol.getFqName(), symbol);
+          }
+        } catch (RuntimeException e) {
+          LOG.log(Level.WARNING, "Symbol provider failed while resolving members for " + ownerFqn, e);
         }
       }
     }

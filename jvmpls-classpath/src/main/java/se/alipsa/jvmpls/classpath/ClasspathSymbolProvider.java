@@ -78,7 +78,6 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
     if (owner.isEmpty()) {
       return List.of();
     }
-    BinaryTypeDetails details = reader.read(owner.get().resourceUri());
     LinkedHashMap<String, SymbolInfo> results = new LinkedHashMap<>();
     collectMembers(owner.get(), results, new LinkedHashSet<>());
     return List.copyOf(results.values());

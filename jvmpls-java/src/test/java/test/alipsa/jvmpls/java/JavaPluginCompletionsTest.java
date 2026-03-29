@@ -159,6 +159,36 @@ class JavaPluginCompletionsTest {
     }
   }
 
+  @Test
+  void resolves_star_import_members_without_taking_first_package_blindly() throws Exception {
+    Path dir = Files.createTempDirectory("jvmpls-java-complete5");
+
+    Path main = dir.resolve("Main.java");
+    String mainCode = """
+      package demo;
+      import java.io.*;
+      import java.util.*;
+      class Main {
+        List<String> names;
+        void m() {
+          names.ad/*caret*/
+        }
+      }
+      """;
+    Files.writeString(main, mainCode, StandardCharsets.UTF_8);
+    String mainUri = main.toUri().toString();
+
+    try (CoreServer server = CoreServer.createDefault((u, d) -> {})) {
+      server.openFile(mainUri, mainCode);
+
+      Position pos = positionAtMarker(mainCode, "/*caret*/");
+      CompletionItem add = byLabel(server.completions(mainUri, pos), "add");
+
+      assertNotNull(add, "Expected List member completion even with multiple star imports");
+      assertEquals("boolean", add.getTypeDetail());
+    }
+  }
+
 
   // ---------- helpers ----------
 

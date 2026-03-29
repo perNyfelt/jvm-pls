@@ -6,6 +6,9 @@ public record WildcardType(Variance variance, JvmType bound) implements JvmType 
 
   public WildcardType {
     variance = variance == null ? Variance.UNBOUNDED : variance;
+    if (variance != Variance.UNBOUNDED && bound == null) {
+      throw new IllegalArgumentException("bound required for " + variance);
+    }
   }
 
   @Override

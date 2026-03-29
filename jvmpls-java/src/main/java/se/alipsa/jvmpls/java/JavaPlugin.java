@@ -2,10 +2,12 @@ package se.alipsa.jvmpls.java;
 
 import se.alipsa.jvmpls.core.CoreQuery;
 import se.alipsa.jvmpls.core.JvmLangPlugin;
+import se.alipsa.jvmpls.core.PluginEnvironment;
 import se.alipsa.jvmpls.core.SymbolReporter;
 import se.alipsa.jvmpls.core.model.*;
 import se.alipsa.jvmpls.core.types.ClassType;
 import se.alipsa.jvmpls.core.types.JvmType;
+import se.alipsa.jvmpls.core.types.TypeResolver;
 import se.alipsa.jvmpls.core.types.JvmTypes;
 import se.alipsa.jvmpls.core.types.MethodSignature;
 
@@ -26,6 +28,7 @@ public final class JavaPlugin implements JvmLangPlugin {
 
   private static final JavaCompiler COMPILER = ToolProvider.getSystemJavaCompiler();
   private final Map<String,String> contentByUri = new ConcurrentHashMap<>();
+  private volatile TypeResolver typeResolver;
 
   private static final java.util.regex.Pattern PKG =
       Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
@@ -39,6 +42,11 @@ public final class JavaPlugin implements JvmLangPlugin {
 
   @Override public String id() { return "java"; }
   @Override public Set<String> fileExtensions() { return Set.of("java"); }
+
+  @Override
+  public void configure(PluginEnvironment env) {
+    typeResolver = new TypeResolver(env.core());
+  }
 
   @Override
   public List<Diagnostic> index(String fileUri, String content, SymbolReporter reporter) {
@@ -250,7 +258,7 @@ public final class JavaPlugin implements JvmLangPlugin {
     return new Range(new Position(sl, sc), new Position(el, ec));
   }
 
-  private static MethodSignature methodSig(MethodTree mt, String pkg, List<String> visibleImports) {
+  private MethodSignature methodSig(MethodTree mt, String pkg, List<String> visibleImports) {
     List<JvmType> parameterTypes = new ArrayList<>();
     List<String> parameterNames = new ArrayList<>();
     for (var parameter : mt.getParameters()) {
@@ -419,11 +427,21 @@ public final class JavaPlugin implements JvmLangPlugin {
     return imports;
   }
 
-  private static JvmType resolveType(String rawType, String pkg, List<String> visibleImports) {
-    return JvmTypes.fromSource(rawType, simpleName -> resolveImportedTypeName(simpleName, pkg, visibleImports));
+  private JvmType resolveType(String rawType, String pkg, List<String> visibleImports) {
+    TypeResolver resolver = typeResolver;
+    if (resolver == null) {
+      return JvmTypes.fromSource(rawType, simpleName -> fallbackResolveImportedTypeName(simpleName, pkg, visibleImports));
+    }
+    return JvmTypes.fromSource(rawType, simpleName -> {
+      String resolved = resolver.resolveClassName(simpleName, pkg, visibleImports);
+      if (!Objects.equals(resolved, simpleName)) {
+        return resolved;
+      }
+      return fallbackResolveImportedTypeName(simpleName, pkg, visibleImports);
+    });
   }
 
-  private static String resolveImportedTypeName(String simpleName, String pkg, List<String> visibleImports) {
+  private static String fallbackResolveImportedTypeName(String simpleName, String pkg, List<String> visibleImports) {
     if (simpleName == null || simpleName.isBlank() || simpleName.contains(".")) {
       return simpleName;
     }
@@ -437,13 +455,25 @@ public final class JavaPlugin implements JvmLangPlugin {
     }
     for (String visibleImport : visibleImports) {
       if (visibleImport.endsWith(".*") && !"java.lang.*".equals(visibleImport)) {
-        return visibleImport.substring(0, visibleImport.length() - 2) + "." + simpleName;
+        String candidate = visibleImport.substring(0, visibleImport.length() - 2) + "." + simpleName;
+        if (isKnownRuntimeType(candidate)) {
+          return candidate;
+        }
       }
     }
-    if (visibleImports.contains("java.lang.*")) {
+    if (visibleImports.contains("java.lang.*") && isKnownRuntimeType("java.lang." + simpleName)) {
       return "java.lang." + simpleName;
     }
     return (pkg == null || pkg.isBlank()) ? simpleName : pkg + "." + simpleName;
+  }
+
+  private static boolean isKnownRuntimeType(String fqn) {
+    try {
+      Class.forName(fqn, false, JavaPlugin.class.getClassLoader());
+      return true;
+    } catch (ClassNotFoundException | LinkageError ignored) {
+      return false;
+    }
   }
 
   private static Set<String> modifiers(Set<Modifier> flags) {

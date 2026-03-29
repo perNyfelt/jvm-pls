@@ -9,9 +9,12 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /** Default implementation of CoreFacade. */
 public final class CoreEngine implements CoreFacade {
+  private static final Logger LOG = Logger.getLogger(CoreEngine.class.getName());
 
   private final PluginRegistry plugins;
   private final SymbolIndex index;
@@ -71,6 +74,7 @@ public final class CoreEngine implements CoreFacade {
     try {
       return pl.completions(uri, position, index);
     } catch (Throwable t) {
+      LOG.log(Level.SEVERE, "Completion request failed for " + uri, t);
       return List.of();
     }
   }
@@ -88,6 +92,7 @@ public final class CoreEngine implements CoreFacade {
       SymbolInfo sym = pl.resolveSymbol(uri, token, index);
       return sym == null ? Optional.empty() : Optional.ofNullable(sym.getLocation());
     } catch (Throwable t) {
+      LOG.log(Level.SEVERE, "Definition request failed for " + uri, t);
       return Optional.empty();
     }
   }

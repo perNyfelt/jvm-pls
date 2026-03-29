@@ -26,13 +26,16 @@ public final class TypeResolver {
     }
     if (visibleImports != null) {
       for (String visibleImport : visibleImports) {
+        if (!visibleImport.endsWith(".*") && visibleImport.endsWith("." + simpleName)) {
+          return visibleImport;
+        }
+      }
+      for (String visibleImport : visibleImports) {
         if (visibleImport.endsWith(".*")) {
           String candidate = visibleImport.substring(0, visibleImport.length() - 2) + "." + simpleName;
           if (core.findByFqn(candidate).isPresent()) {
             return candidate;
           }
-        } else if (visibleImport.endsWith("." + simpleName)) {
-          return visibleImport;
         }
       }
     }

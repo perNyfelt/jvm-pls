@@ -2,6 +2,7 @@ package se.alipsa.jvmpls.groovy;
 
 import se.alipsa.jvmpls.core.CoreQuery;
 import se.alipsa.jvmpls.core.JvmLangPlugin;
+import se.alipsa.jvmpls.core.PluginEnvironment;
 import se.alipsa.jvmpls.core.SymbolReporter;
 import se.alipsa.jvmpls.core.model.*;
 import se.alipsa.jvmpls.core.types.ArrayType;
@@ -11,6 +12,7 @@ import se.alipsa.jvmpls.core.types.JvmType;
 import se.alipsa.jvmpls.core.types.JvmTypes;
 import se.alipsa.jvmpls.core.types.MethodSignature;
 import se.alipsa.jvmpls.core.types.PrimitiveType;
+import se.alipsa.jvmpls.core.types.TypeResolver;
 
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport;
 import org.codehaus.groovy.ast.*;
@@ -53,11 +55,17 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private final Map<String, FileCtx> ctxByUri = new ConcurrentHashMap<>();
   private final Map<String, String>  contentByUri = new ConcurrentHashMap<>();
+  private volatile TypeResolver typeResolver;
 
   // Groovy default star imports (visibility without explicit imports)
   private static final List<String> DEFAULT_STAR_IMPORTS = List.of(
       "java.lang", "java.util", "java.io", "java.net", "groovy.lang", "groovy.util"
   );
+
+  @Override
+  public void configure(PluginEnvironment env) {
+    typeResolver = new TypeResolver(env.core());
+  }
 
   @Override
   public List<Diagnostic> index(String fileUri, String content, SymbolReporter reporter) {
@@ -381,7 +389,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private static int safeZero(int x) { return Math.max(x, 0); }
 
-  private static MethodSignature methodSig(MethodNode mn, FileCtx ctx) {
+  private MethodSignature methodSig(MethodNode mn, FileCtx ctx) {
     List<JvmType> parameterTypes = new ArrayList<>();
     List<String> parameterNames = new ArrayList<>();
     for (Parameter parameter : mn.getParameters()) {
@@ -396,7 +404,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
     return t == null ? "java.lang.Object" : t.getName();
   }
 
-  private static JvmType typeOf(ClassNode node, FileCtx ctx) {
+  private JvmType typeOf(ClassNode node, FileCtx ctx) {
     if (node == null) {
       return DynamicType.INSTANCE;
     }
@@ -422,28 +430,63 @@ public final class GroovyPlugin implements JvmLangPlugin {
     return new ClassType(resolveTypeName(name, ctx), typeArguments);
   }
 
-  private static String resolveTypeName(String name, FileCtx ctx) {
+  private String resolveTypeName(String name, FileCtx ctx) {
     if (name == null || name.isBlank() || name.contains(".")) {
       return name;
-    }
-    for (String imported : ctx.singleImports) {
-      if (imported.endsWith("." + name)) {
-        return imported;
-      }
     }
     String aliasTarget = ctx.aliasToFqn.get(name);
     if (aliasTarget != null) {
       return aliasTarget;
     }
+    TypeResolver resolver = typeResolver;
+    List<String> visibleImports = new ArrayList<>(ctx.singleImports.size() + ctx.starImports.size()
+        + DEFAULT_SINGLE_IMPORTS.size() + DEFAULT_STAR_IMPORTS.size());
+    visibleImports.addAll(ctx.singleImports);
+    visibleImports.addAll(DEFAULT_SINGLE_IMPORTS);
     for (String pkg : ctx.starImports) {
-      return normPkg(pkg) + "." + name;
+      visibleImports.add(normPkg(pkg) + ".*");
     }
     for (String pkg : DEFAULT_STAR_IMPORTS) {
-      if ("java.lang".equals(pkg)) {
-        return pkg + "." + name;
-      }
+      visibleImports.add(pkg + ".*");
+    }
+    if (resolver == null) {
+      return fallbackResolveTypeName(name, ctx, visibleImports);
+    }
+    String resolved = resolver.resolveClassName(name, ctx.pkg, visibleImports);
+    if (!Objects.equals(resolved, name)) {
+      return resolved;
     }
     return (ctx.pkg == null || ctx.pkg.isBlank()) ? name : ctx.pkg + "." + name;
+  }
+
+  private static String fallbackResolveTypeName(String name, FileCtx ctx, List<String> visibleImports) {
+    for (String imported : visibleImports) {
+      if (!imported.endsWith(".*") && imported.endsWith("." + name)) {
+        return imported;
+      }
+    }
+    String samePackage = (ctx.pkg == null || ctx.pkg.isBlank()) ? name : ctx.pkg + "." + name;
+    if (isKnownRuntimeType(samePackage)) {
+      return samePackage;
+    }
+    for (String imported : visibleImports) {
+      if (imported.endsWith(".*")) {
+        String candidate = imported.substring(0, imported.length() - 2) + "." + name;
+        if (isKnownRuntimeType(candidate)) {
+          return candidate;
+        }
+      }
+    }
+    return samePackage;
+  }
+
+  private static boolean isKnownRuntimeType(String fqn) {
+    try {
+      Class.forName(fqn, false, GroovyPlugin.class.getClassLoader());
+      return true;
+    } catch (ClassNotFoundException | LinkageError ignored) {
+      return false;
+    }
   }
 
   private static String simpleName(String fqn) {

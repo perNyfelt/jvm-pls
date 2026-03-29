@@ -11,7 +11,7 @@ public final class TypeRelations {
     if (source instanceof DynamicType || target instanceof DynamicType) {
       return true;
     }
-    if (source.displayName().equals(target.displayName())) {
+    if (source.equals(target)) {
       return true;
     }
     if (target instanceof ClassType targetClass && "java.lang.Object".equals(targetClass.fqName())) {
@@ -29,7 +29,7 @@ public final class TypeRelations {
   }
 
   public JvmType commonSupertype(JvmType left, JvmType right) {
-    if (left.displayName().equals(right.displayName())) {
+    if (left.equals(right)) {
       return left;
     }
     if (left instanceof DynamicType || right instanceof DynamicType) {
