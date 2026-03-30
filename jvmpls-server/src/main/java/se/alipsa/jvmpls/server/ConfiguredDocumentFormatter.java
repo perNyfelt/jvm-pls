@@ -56,14 +56,14 @@ final class ConfiguredDocumentFormatter implements DocumentFormatter {
     boolean usesTempFile = args.stream().anyMatch(arg -> arg.contains("{file}"));
     if (usesTempFile) {
       Path tempFile = tempFileFor(uri);
-      Files.writeString(tempFile, text, StandardCharsets.UTF_8);
       try {
+        Files.writeString(tempFile, text, StandardCharsets.UTF_8);
         List<String> resolved =
             args.stream().map(arg -> arg.replace("{file}", tempFile.toString())).toList();
         runProcess(resolved, null, timeoutMs);
         return Files.readString(tempFile, StandardCharsets.UTF_8);
       } finally {
-        Files.deleteIfExists(tempFile);
+        deleteIfExists(tempFile);
       }
     }
     return runProcess(args, text, timeoutMs);
@@ -100,6 +100,14 @@ final class ConfiguredDocumentFormatter implements DocumentFormatter {
       }
     }
     return Files.createTempFile("jvmpls-format-", suffix);
+  }
+
+  private static void deleteIfExists(Path tempFile) {
+    try {
+      Files.deleteIfExists(tempFile);
+    } catch (Exception e) {
+      LOG.log(Level.FINE, "Failed to delete temp formatter file " + tempFile, e);
+    }
   }
 
   private static String readFully(java.io.InputStream inputStream) throws Exception {

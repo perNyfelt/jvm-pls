@@ -800,8 +800,11 @@ public final class CoreEngine implements CoreFacade {
   }
 
   private String readSource(String uri) {
+    if (uri == null) {
+      return null;
+    }
     String source = docs.get(uri);
-    if ((source == null || source.isBlank()) && uri != null && uri.startsWith("file:")) {
+    if ((source == null || source.isBlank()) && uri.startsWith("file:")) {
       try {
         source = java.nio.file.Files.readString(java.nio.file.Path.of(java.net.URI.create(uri)));
       } catch (Exception ignored) {
