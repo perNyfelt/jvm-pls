@@ -3,6 +3,7 @@ package se.alipsa.jvmpls.core.model;
 import java.util.List;
 import java.util.Objects;
 
+/** Describes one callable overload for signature help or hover presentation. */
 public final class CallableInfo {
   private final String label;
   private final List<String> parameterLabels;

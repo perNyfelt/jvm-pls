@@ -10,6 +10,7 @@ import se.alipsa.jvmpls.core.model.SymbolInfo;
 
 public final class SymbolIndex implements CoreQuery {
   private static final Logger LOG = Logger.getLogger(SymbolIndex.class.getName());
+  private static final char REF_KEY_SEPARATOR = '\0';
 
   private final Map<String, SymbolInfo> byFqn = new ConcurrentHashMap<>();
   private final Map<String, Set<String>> fileToDecls = new ConcurrentHashMap<>();
@@ -59,7 +60,7 @@ public final class SymbolIndex implements CoreQuery {
     Set<String> refs = fileToRefs.remove(fileUri);
     if (refs != null) {
       for (String ref : refs) {
-        int separator = ref.indexOf('\n');
+        int separator = ref.indexOf(REF_KEY_SEPARATOR);
         if (separator < 0) {
           continue;
         }
@@ -184,7 +185,7 @@ public final class SymbolIndex implements CoreQuery {
         .put(key, useSite);
     fileToRefs
         .computeIfAbsent(fileUri, ignored -> ConcurrentHashMap.newKeySet())
-        .add(targetFqn + "\n" + key);
+        .add(targetFqn + REF_KEY_SEPARATOR + key);
   }
 
   public List<Location> referencesTo(String targetFqn) {

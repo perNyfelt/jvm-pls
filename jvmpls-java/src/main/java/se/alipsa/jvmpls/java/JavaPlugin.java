@@ -1374,8 +1374,7 @@ public final class JavaPlugin implements JvmLangPlugin {
       javax.tools.Diagnostic<? extends JavaFileObject> diagnostic) {
     long line = Math.max(0, diagnostic.getLineNumber() - 1);
     long column = Math.max(0, diagnostic.getColumnNumber() - 1);
-    long endColumn =
-        diagnostic.getEndPosition() > diagnostic.getStartPosition() ? column + 1 : column + 1;
+    long endColumn = column + 1;
     return new Range(
         new Position((int) line, (int) column), new Position((int) line, (int) endColumn));
   }

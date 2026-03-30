@@ -2,6 +2,7 @@ package se.alipsa.jvmpls.core.model;
 
 import java.util.List;
 
+/** Transport-neutral signature help result with active signature and parameter indexes. */
 public final class SignatureHelpInfo {
   private final List<CallableInfo> signatures;
   private final int activeSignature;

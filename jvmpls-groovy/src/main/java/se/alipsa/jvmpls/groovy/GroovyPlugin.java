@@ -243,9 +243,11 @@ public final class GroovyPlugin implements JvmLangPlugin {
       }
     }
 
+    String currentPkg = ctx.pkg == null ? "" : ctx.pkg;
+
     // 1) Same-package class
-    if (!ctx.pkg.isBlank()) {
-      String fqn = ctx.pkg + "." + symbolName;
+    if (!currentPkg.isBlank()) {
+      String fqn = currentPkg + "." + symbolName;
       var hit = core.findByFqn(fqn);
       if (hit.isPresent()) return hit.get();
     }

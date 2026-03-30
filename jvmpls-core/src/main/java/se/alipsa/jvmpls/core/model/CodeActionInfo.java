@@ -3,6 +3,7 @@ package se.alipsa.jvmpls.core.model;
 import java.util.List;
 import java.util.Objects;
 
+/** Transport-neutral code action description with workspace edits. */
 public final class CodeActionInfo {
   private final String title;
   private final String kind;

@@ -2,6 +2,7 @@ package se.alipsa.jvmpls.core.model;
 
 import java.util.Objects;
 
+/** Transport-neutral hover payload returned by the core API. */
 public final class HoverInfo {
   private final String title;
   private final String detail;
