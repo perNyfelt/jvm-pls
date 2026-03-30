@@ -13,6 +13,7 @@ import java.util.concurrent.*;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 import org.eclipse.lsp4j.launch.LSPLauncher;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageServer;
@@ -135,6 +136,11 @@ class JvmPlsLanguageServerTest {
     assertNotNull(result.getCapabilities().getWorkspaceSymbolProvider());
     assertNotNull(result.getCapabilities().getSignatureHelpProvider());
     assertNotNull(result.getCapabilities().getCodeActionProvider());
+    assertNotNull(result.getCapabilities().getTypeDefinitionProvider());
+    assertNotNull(result.getCapabilities().getImplementationProvider());
+    assertNotNull(result.getCapabilities().getDocumentFormattingProvider());
+    assertNotNull(result.getCapabilities().getRenameProvider());
+    assertNotNull(result.getCapabilities().getCallHierarchyProvider());
 
     assertNotNull(result.getServerInfo(), "serverInfo should not be null");
     assertEquals("jvm-pls", result.getServerInfo().getName());
@@ -394,6 +400,190 @@ class JvmPlsLanguageServerTest {
             .filter(Either::isRight)
             .map(Either::getRight)
             .anyMatch(action -> action.getTitle().contains("Import java.util.List")));
+  }
+
+  @Test
+  void typeDefinition_andImplementation_work() throws Exception {
+    initialize();
+
+    Path dir = Files.createTempDirectory("jvm-pls-lsp-type-def");
+    Path pkgDir = Files.createDirectories(dir.resolve("demo"));
+    Path apiFile = pkgDir.resolve("Greeter.java");
+    String apiCode = "package demo;\n\npublic interface Greeter {}\n";
+    Path implFile = pkgDir.resolve("GreeterImpl.java");
+    String implCode = "package demo;\n\npublic class GreeterImpl implements Greeter {}\n";
+    Path useFile = pkgDir.resolve("Use.java");
+    String useCode =
+        """
+        package demo;
+
+        public class Use {
+          Greeter greeter = new GreeterImpl();
+        }
+        """;
+    Files.writeString(apiFile, apiCode, StandardCharsets.UTF_8);
+    Files.writeString(implFile, implCode, StandardCharsets.UTF_8);
+    Files.writeString(useFile, useCode, StandardCharsets.UTF_8);
+    String apiUri = apiFile.toUri().toString();
+    String implUri = implFile.toUri().toString();
+    String useUri = useFile.toUri().toString();
+
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(apiUri, "java", 1, apiCode)));
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(implUri, "java", 1, implCode)));
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(useUri, "java", 1, useCode)));
+    assertNotNull(testClient.awaitDiagnostics(apiUri, TIMEOUT_SECONDS));
+    assertNotNull(testClient.awaitDiagnostics(implUri, TIMEOUT_SECONDS));
+    assertNotNull(testClient.awaitDiagnostics(useUri, TIMEOUT_SECONDS));
+
+    Either<List<? extends Location>, List<? extends LocationLink>> typeDefinition =
+        serverProxy
+            .getTextDocumentService()
+            .typeDefinition(
+                new TypeDefinitionParams(new TextDocumentIdentifier(useUri), new Position(3, 10)))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(typeDefinition.isLeft());
+    assertEquals(apiUri, typeDefinition.getLeft().getFirst().getUri());
+
+    Either<List<? extends Location>, List<? extends LocationLink>> implementations =
+        serverProxy
+            .getTextDocumentService()
+            .implementation(
+                new ImplementationParams(new TextDocumentIdentifier(apiUri), new Position(2, 17)))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(implementations.isLeft());
+    assertTrue(
+        implementations.getLeft().stream().anyMatch(location -> implUri.equals(location.getUri())));
+  }
+
+  @Test
+  void rename_updatesJavaAndGroovyReferences() throws Exception {
+    initialize();
+
+    Path dir = Files.createTempDirectory("jvm-pls-lsp-rename");
+    Path pkgDir = Files.createDirectories(dir.resolve("demo"));
+    Path javaFile = pkgDir.resolve("Foo.java");
+    String javaCode =
+        """
+        package demo;
+
+        public class Foo {
+          public Foo() {}
+        }
+        """;
+    Path groovyFile = pkgDir.resolve("UseFoo.groovy");
+    String groovyCode =
+        """
+        package demo
+
+        class UseFoo {
+          def build() {
+            new Foo()
+          }
+        }
+        """;
+    Files.writeString(javaFile, javaCode, StandardCharsets.UTF_8);
+    Files.writeString(groovyFile, groovyCode, StandardCharsets.UTF_8);
+    String javaUri = javaFile.toUri().toString();
+    String groovyUri = groovyFile.toUri().toString();
+
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(javaUri, "java", 1, javaCode)));
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(
+            new DidOpenTextDocumentParams(
+                new TextDocumentItem(groovyUri, "groovy", 1, groovyCode)));
+    assertNotNull(testClient.awaitDiagnostics(javaUri, TIMEOUT_SECONDS));
+    assertNotNull(testClient.awaitDiagnostics(groovyUri, TIMEOUT_SECONDS));
+
+    Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior> prepare =
+        serverProxy
+            .getTextDocumentService()
+            .prepareRename(
+                new PrepareRenameParams(new TextDocumentIdentifier(javaUri), new Position(2, 15)))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertNotNull(prepare);
+
+    WorkspaceEdit edit =
+        serverProxy
+            .getTextDocumentService()
+            .rename(
+                new RenameParams(
+                    new TextDocumentIdentifier(javaUri), new Position(2, 15), "RenamedFoo"))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertNotNull(edit.getChanges());
+    assertTrue(edit.getChanges().containsKey(javaUri));
+    assertTrue(edit.getChanges().containsKey(groovyUri));
+    assertTrue(
+        edit.getChanges().get(javaUri).stream()
+            .anyMatch(textEdit -> "RenamedFoo".equals(textEdit.getNewText())));
+    assertTrue(
+        edit.getChanges().get(groovyUri).stream()
+            .anyMatch(textEdit -> "RenamedFoo".equals(textEdit.getNewText())));
+  }
+
+  @Test
+  void callHierarchy_reportsIncomingAndOutgoingCalls() throws Exception {
+    initialize();
+
+    Path dir = Files.createTempDirectory("jvm-pls-lsp-call-hierarchy");
+    Path pkgDir = Files.createDirectories(dir.resolve("demo"));
+    Path file = pkgDir.resolve("Calls.java");
+    String code =
+        """
+        package demo;
+
+        public class Calls {
+          void alpha() { beta(); }
+          void beta() {}
+          void gamma() { beta(); }
+        }
+        """;
+    Files.writeString(file, code, StandardCharsets.UTF_8);
+    String uri = file.toUri().toString();
+
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, code)));
+    assertNotNull(testClient.awaitDiagnostics(uri, TIMEOUT_SECONDS));
+
+    List<CallHierarchyItem> alphaItems =
+        serverProxy
+            .getTextDocumentService()
+            .prepareCallHierarchy(
+                new CallHierarchyPrepareParams(new TextDocumentIdentifier(uri), new Position(3, 9)))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertFalse(alphaItems.isEmpty());
+
+    List<CallHierarchyOutgoingCall> outgoingCalls =
+        serverProxy
+            .getTextDocumentService()
+            .callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(alphaItems.getFirst()))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(outgoingCalls.stream().anyMatch(call -> "beta".equals(call.getTo().getName())));
+
+    List<CallHierarchyItem> betaItems =
+        serverProxy
+            .getTextDocumentService()
+            .prepareCallHierarchy(
+                new CallHierarchyPrepareParams(new TextDocumentIdentifier(uri), new Position(4, 9)))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertFalse(betaItems.isEmpty());
+
+    List<CallHierarchyIncomingCall> incomingCalls =
+        serverProxy
+            .getTextDocumentService()
+            .callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(betaItems.getFirst()))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(incomingCalls.stream().anyMatch(call -> "alpha".equals(call.getFrom().getName())));
+    assertTrue(incomingCalls.stream().anyMatch(call -> "gamma".equals(call.getFrom().getName())));
   }
 
   // -------------------------------------------------------------------------

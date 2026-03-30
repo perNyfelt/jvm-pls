@@ -233,6 +233,12 @@ class JvmPlsLanguageServerLifecycleTest {
     }
 
     @Override
+    public Optional<Location> typeDefinition(
+        String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return Optional.empty();
+    }
+
+    @Override
     public Optional<HoverInfo> hover(String uri, se.alipsa.jvmpls.core.model.Position position) {
       return Optional.empty();
     }
@@ -254,6 +260,12 @@ class JvmPlsLanguageServerLifecycleTest {
     }
 
     @Override
+    public List<Location> implementations(
+        String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return List.of();
+    }
+
+    @Override
     public Optional<SignatureHelpInfo> signatureHelp(
         String uri, se.alipsa.jvmpls.core.model.Position position) {
       return Optional.empty();
@@ -261,6 +273,34 @@ class JvmPlsLanguageServerLifecycleTest {
 
     @Override
     public List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics) {
+      return List.of();
+    }
+
+    @Override
+    public Optional<se.alipsa.jvmpls.core.model.PrepareRenameInfo> prepareRename(
+        String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<se.alipsa.jvmpls.core.model.RenamePlan> rename(
+        String uri, se.alipsa.jvmpls.core.model.Position position, String newName) {
+      return Optional.empty();
+    }
+
+    @Override
+    public List<se.alipsa.jvmpls.core.model.CallHierarchyItemInfo> prepareCallHierarchy(
+        String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return List.of();
+    }
+
+    @Override
+    public List<se.alipsa.jvmpls.core.model.IncomingCallInfo> incomingCalls(String symbolFqn) {
+      return List.of();
+    }
+
+    @Override
+    public List<se.alipsa.jvmpls.core.model.OutgoingCallInfo> outgoingCalls(String symbolFqn) {
       return List.of();
     }
   }

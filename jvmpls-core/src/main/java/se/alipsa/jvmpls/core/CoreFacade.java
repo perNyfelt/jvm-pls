@@ -26,6 +26,9 @@ public interface CoreFacade {
   /** Go to definition for the token at a position. */
   Optional<Location> definition(String uri, Position position);
 
+  /** Go to the definition of the resolved type for the expression at a position. */
+  Optional<Location> typeDefinition(String uri, Position position);
+
   /** Hover payload for the symbol or expression at a position. */
   Optional<HoverInfo> hover(String uri, Position position);
 
@@ -38,9 +41,27 @@ public interface CoreFacade {
   /** Workspace/global symbol search. */
   List<SymbolInfo> workspaceSymbols(String query);
 
+  /** Find implementing/extending declarations for the symbol at a position. */
+  List<Location> implementations(String uri, Position position);
+
   /** Signature help for the active call site. */
   Optional<SignatureHelpInfo> signatureHelp(String uri, Position position);
 
   /** Quick fixes and code actions for the current file/range. */
   List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics);
+
+  /** Validate whether rename is supported at a position. */
+  Optional<PrepareRenameInfo> prepareRename(String uri, Position position);
+
+  /** Build a workspace rename plan for the symbol at a position. */
+  Optional<RenamePlan> rename(String uri, Position position, String newName);
+
+  /** Prepare call hierarchy items for the symbol at a position. */
+  List<CallHierarchyItemInfo> prepareCallHierarchy(String uri, Position position);
+
+  /** Incoming callers for a callable symbol. */
+  List<IncomingCallInfo> incomingCalls(String symbolFqn);
+
+  /** Outgoing callees for a callable symbol. */
+  List<OutgoingCallInfo> outgoingCalls(String symbolFqn);
 }

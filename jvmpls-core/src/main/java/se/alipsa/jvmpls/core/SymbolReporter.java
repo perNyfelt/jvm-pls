@@ -90,4 +90,16 @@ public interface SymbolReporter {
   default void reportReference(String targetFqn, Location useSite) {
     LOG.fine("Reference reporting is not implemented by this SymbolReporter for " + targetFqn);
   }
+
+  default void reportDirectSupertypes(String typeFqn, java.util.List<String> directSupertypes) {
+    LOG.fine("Type hierarchy reporting is not implemented by this SymbolReporter for " + typeFqn);
+  }
+
+  default void reportCall(String callerFqn, String calleeFqn, Location useSite) {
+    LOG.fine(
+        "Call reporting is not implemented by this SymbolReporter for "
+            + callerFqn
+            + " -> "
+            + calleeFqn);
+  }
 }

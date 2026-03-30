@@ -8,13 +8,18 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import se.alipsa.jvmpls.core.CoreFacade;
+import se.alipsa.jvmpls.core.model.CallHierarchyItemInfo;
 import se.alipsa.jvmpls.core.model.CodeActionInfo;
 import se.alipsa.jvmpls.core.model.CompletionItem;
 import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.model.HoverInfo;
+import se.alipsa.jvmpls.core.model.IncomingCallInfo;
 import se.alipsa.jvmpls.core.model.Location;
+import se.alipsa.jvmpls.core.model.OutgoingCallInfo;
 import se.alipsa.jvmpls.core.model.Position;
+import se.alipsa.jvmpls.core.model.PrepareRenameInfo;
 import se.alipsa.jvmpls.core.model.Range;
+import se.alipsa.jvmpls.core.model.RenamePlan;
 import se.alipsa.jvmpls.core.model.SignatureHelpInfo;
 import se.alipsa.jvmpls.core.model.SymbolInfo;
 
@@ -101,6 +106,11 @@ final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
   }
 
   @Override
+  public Optional<Location> typeDefinition(String uri, Position position) {
+    return requireDelegate().typeDefinition(uri, position);
+  }
+
+  @Override
   public Optional<HoverInfo> hover(String uri, Position position) {
     return requireDelegate().hover(uri, position);
   }
@@ -121,6 +131,11 @@ final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
   }
 
   @Override
+  public List<Location> implementations(String uri, Position position) {
+    return requireDelegate().implementations(uri, position);
+  }
+
+  @Override
   public Optional<SignatureHelpInfo> signatureHelp(String uri, Position position) {
     return requireDelegate().signatureHelp(uri, position);
   }
@@ -128,6 +143,31 @@ final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
   @Override
   public List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics) {
     return requireDelegate().codeActions(uri, range, diagnostics);
+  }
+
+  @Override
+  public Optional<PrepareRenameInfo> prepareRename(String uri, Position position) {
+    return requireDelegate().prepareRename(uri, position);
+  }
+
+  @Override
+  public Optional<RenamePlan> rename(String uri, Position position, String newName) {
+    return requireDelegate().rename(uri, position, newName);
+  }
+
+  @Override
+  public List<CallHierarchyItemInfo> prepareCallHierarchy(String uri, Position position) {
+    return requireDelegate().prepareCallHierarchy(uri, position);
+  }
+
+  @Override
+  public List<IncomingCallInfo> incomingCalls(String symbolFqn) {
+    return requireDelegate().incomingCalls(symbolFqn);
+  }
+
+  @Override
+  public List<OutgoingCallInfo> outgoingCalls(String symbolFqn) {
+    return requireDelegate().outgoingCalls(symbolFqn);
   }
 
   private CoreFacade requireDelegate() {

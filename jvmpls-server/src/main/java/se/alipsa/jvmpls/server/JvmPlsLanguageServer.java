@@ -64,7 +64,11 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
     this.workspaceManager = null;
     this.textDocumentService =
         new JvmPlsTextDocumentService(
-            coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
+            coreFacade,
+            openDocuments,
+            this::acceptingRequests,
+            coreFacade::isReady,
+            DocumentFormatter.disabled());
     this.workspaceService =
         new JvmPlsWorkspaceService(
             this::acceptingRequests, ignored -> {}, ignored -> {}, coreFacade::workspaceSymbols);
@@ -86,7 +90,11 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
             diagnosticsPublisher::showWarning);
     this.textDocumentService =
         new JvmPlsTextDocumentService(
-            coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
+            coreFacade,
+            openDocuments,
+            this::acceptingRequests,
+            coreFacade::isReady,
+            new ConfiguredDocumentFormatter(workspaceManager::workspaceSettings));
     this.workspaceService =
         new JvmPlsWorkspaceService(
             this::acceptingRequests,
@@ -118,6 +126,8 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
     capabilities.setCompletionProvider(completionOptions);
 
     capabilities.setDefinitionProvider(true);
+    capabilities.setTypeDefinitionProvider(true);
+    capabilities.setImplementationProvider(true);
     capabilities.setHoverProvider(true);
     capabilities.setReferencesProvider(true);
     capabilities.setDocumentSymbolProvider(true);
@@ -128,6 +138,9 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
     capabilities.setSignatureHelpProvider(signatureHelpOptions);
 
     capabilities.setCodeActionProvider(true);
+    capabilities.setDocumentFormattingProvider(true);
+    capabilities.setRenameProvider(new RenameOptions(true));
+    capabilities.setCallHierarchyProvider(true);
 
     InitializeResult result = new InitializeResult(capabilities);
     result.setServerInfo(new ServerInfo(ServerMetadata.NAME, ServerMetadata.VERSION));
@@ -219,6 +232,12 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
       }
 
       @Override
+      public java.util.Optional<se.alipsa.jvmpls.core.model.Location> typeDefinition(
+          String uri, se.alipsa.jvmpls.core.model.Position position) {
+        return delegate.typeDefinition(uri, position);
+      }
+
+      @Override
       public java.util.Optional<se.alipsa.jvmpls.core.model.HoverInfo> hover(
           String uri, se.alipsa.jvmpls.core.model.Position position) {
         return delegate.hover(uri, position);
@@ -241,6 +260,12 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
       }
 
       @Override
+      public List<se.alipsa.jvmpls.core.model.Location> implementations(
+          String uri, se.alipsa.jvmpls.core.model.Position position) {
+        return delegate.implementations(uri, position);
+      }
+
+      @Override
       public java.util.Optional<se.alipsa.jvmpls.core.model.SignatureHelpInfo> signatureHelp(
           String uri, se.alipsa.jvmpls.core.model.Position position) {
         return delegate.signatureHelp(uri, position);
@@ -252,6 +277,34 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
           se.alipsa.jvmpls.core.model.Range range,
           List<se.alipsa.jvmpls.core.model.Diagnostic> diagnostics) {
         return delegate.codeActions(uri, range, diagnostics);
+      }
+
+      @Override
+      public java.util.Optional<se.alipsa.jvmpls.core.model.PrepareRenameInfo> prepareRename(
+          String uri, se.alipsa.jvmpls.core.model.Position position) {
+        return delegate.prepareRename(uri, position);
+      }
+
+      @Override
+      public java.util.Optional<se.alipsa.jvmpls.core.model.RenamePlan> rename(
+          String uri, se.alipsa.jvmpls.core.model.Position position, String newName) {
+        return delegate.rename(uri, position, newName);
+      }
+
+      @Override
+      public List<se.alipsa.jvmpls.core.model.CallHierarchyItemInfo> prepareCallHierarchy(
+          String uri, se.alipsa.jvmpls.core.model.Position position) {
+        return delegate.prepareCallHierarchy(uri, position);
+      }
+
+      @Override
+      public List<se.alipsa.jvmpls.core.model.IncomingCallInfo> incomingCalls(String symbolFqn) {
+        return delegate.incomingCalls(symbolFqn);
+      }
+
+      @Override
+      public List<se.alipsa.jvmpls.core.model.OutgoingCallInfo> outgoingCalls(String symbolFqn) {
+        return delegate.outgoingCalls(symbolFqn);
       }
     };
   }

@@ -57,6 +57,11 @@ public interface JvmLangPlugin {
     return Optional.empty();
   }
 
+  /** Type definition query for plugin-specific expression type resolution. */
+  default Optional<SymbolInfo> typeDefinition(String fileUri, Position position, CoreQuery core) {
+    return Optional.empty();
+  }
+
   /** Signature help query for plugin-specific call resolution. */
   default Optional<SignatureHelpInfo> signatureHelp(
       String fileUri, Position position, CoreQuery core) {

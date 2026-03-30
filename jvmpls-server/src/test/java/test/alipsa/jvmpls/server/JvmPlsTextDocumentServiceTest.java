@@ -16,9 +16,13 @@ import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
+import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DocumentFormattingParams;
+import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.Test;
@@ -31,6 +35,8 @@ import se.alipsa.jvmpls.core.model.HoverInfo;
 import se.alipsa.jvmpls.core.model.Range;
 import se.alipsa.jvmpls.core.model.SignatureHelpInfo;
 import se.alipsa.jvmpls.core.model.SymbolInfo;
+import se.alipsa.jvmpls.core.model.TextEdit;
+import se.alipsa.jvmpls.server.DocumentFormatter;
 import se.alipsa.jvmpls.server.JvmPlsTextDocumentService;
 
 class JvmPlsTextDocumentServiceTest {
@@ -114,6 +120,33 @@ class JvmPlsTextDocumentServiceTest {
     }
   }
 
+  @Test
+  void formatting_usesInjectedFormatter() throws Exception {
+    FakeCoreFacade core = new FakeCoreFacade();
+    DocumentFormatter formatter =
+        (uri, text) ->
+            List.of(
+                new TextEdit(
+                    new Range(
+                        new se.alipsa.jvmpls.core.model.Position(0, 0),
+                        new se.alipsa.jvmpls.core.model.Position(0, text.length())),
+                    text.toUpperCase()));
+    JvmPlsTextDocumentService service = new JvmPlsTextDocumentService(core, formatter);
+
+    service.didOpen(
+        new DidOpenTextDocumentParams(new TextDocumentItem(TEST_URI, "java", 1, "class Test {}")));
+
+    List<? extends org.eclipse.lsp4j.TextEdit> edits =
+        service
+            .formatting(
+                new DocumentFormattingParams(
+                    new TextDocumentIdentifier(TEST_URI), new FormattingOptions(2, true)))
+            .get(5, TimeUnit.SECONDS);
+
+    assertEquals(1, edits.size());
+    assertEquals("CLASS TEST {}", edits.getFirst().getNewText());
+  }
+
   private static final class FakeCoreFacade implements CoreFacade {
 
     private final AtomicInteger changeInvocations = new AtomicInteger();
@@ -155,6 +188,12 @@ class JvmPlsTextDocumentServiceTest {
     }
 
     @Override
+    public Optional<se.alipsa.jvmpls.core.model.Location> typeDefinition(
+        String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return Optional.empty();
+    }
+
+    @Override
     public Optional<HoverInfo> hover(String uri, se.alipsa.jvmpls.core.model.Position position) {
       return Optional.empty();
     }
@@ -176,6 +215,12 @@ class JvmPlsTextDocumentServiceTest {
     }
 
     @Override
+    public List<se.alipsa.jvmpls.core.model.Location> implementations(
+        String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return List.of();
+    }
+
+    @Override
     public Optional<SignatureHelpInfo> signatureHelp(
         String uri, se.alipsa.jvmpls.core.model.Position position) {
       return Optional.empty();
@@ -183,6 +228,34 @@ class JvmPlsTextDocumentServiceTest {
 
     @Override
     public List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics) {
+      return List.of();
+    }
+
+    @Override
+    public Optional<se.alipsa.jvmpls.core.model.PrepareRenameInfo> prepareRename(
+        String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return Optional.empty();
+    }
+
+    @Override
+    public Optional<se.alipsa.jvmpls.core.model.RenamePlan> rename(
+        String uri, se.alipsa.jvmpls.core.model.Position position, String newName) {
+      return Optional.empty();
+    }
+
+    @Override
+    public List<se.alipsa.jvmpls.core.model.CallHierarchyItemInfo> prepareCallHierarchy(
+        String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return List.of();
+    }
+
+    @Override
+    public List<se.alipsa.jvmpls.core.model.IncomingCallInfo> incomingCalls(String symbolFqn) {
+      return List.of();
+    }
+
+    @Override
+    public List<se.alipsa.jvmpls.core.model.OutgoingCallInfo> outgoingCalls(String symbolFqn) {
       return List.of();
     }
   }

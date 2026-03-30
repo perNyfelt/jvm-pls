@@ -5,20 +5,30 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.eclipse.lsp4j.CallHierarchyIncomingCall;
+import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.ParameterInformation;
+import org.eclipse.lsp4j.PrepareRenameResult;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SignatureInformation;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 
+import se.alipsa.jvmpls.core.model.CallHierarchyItemInfo;
 import se.alipsa.jvmpls.core.model.CodeActionInfo;
 import se.alipsa.jvmpls.core.model.Diagnostic;
 import se.alipsa.jvmpls.core.model.HoverInfo;
+import se.alipsa.jvmpls.core.model.IncomingCallInfo;
+import se.alipsa.jvmpls.core.model.OutgoingCallInfo;
+import se.alipsa.jvmpls.core.model.PrepareRenameInfo;
 import se.alipsa.jvmpls.core.model.SignatureHelpInfo;
 import se.alipsa.jvmpls.core.model.SymbolInfo;
+import se.alipsa.jvmpls.core.model.WorkspaceEditInfo;
 
 /**
  * Stateless utility class that maps between {@code se.alipsa.jvmpls.core.model.*} types and {@code
@@ -221,6 +231,53 @@ public final class LspTypeConverter {
     workspaceEdit.setChanges(changes);
     action.setEdit(workspaceEdit);
     return action;
+  }
+
+  public static WorkspaceEdit toLsp(WorkspaceEditInfo core) {
+    WorkspaceEdit workspaceEdit = new WorkspaceEdit();
+    Map<String, List<org.eclipse.lsp4j.TextEdit>> changes = new LinkedHashMap<>();
+    core.getChanges()
+        .forEach(
+            (uri, edits) ->
+                changes.put(
+                    uri, edits.stream().map(LspTypeConverter::toLsp).collect(Collectors.toList())));
+    workspaceEdit.setChanges(changes);
+    return workspaceEdit;
+  }
+
+  public static Either3<
+          org.eclipse.lsp4j.Range,
+          PrepareRenameResult,
+          org.eclipse.lsp4j.PrepareRenameDefaultBehavior>
+      toLspPrepareRename(PrepareRenameInfo core) {
+    return Either3.forSecond(
+        new PrepareRenameResult(toLsp(core.getRange()), core.getPlaceholder()));
+  }
+
+  public static CallHierarchyItem toLsp(CallHierarchyItemInfo core) {
+    CallHierarchyItem item = new CallHierarchyItem();
+    item.setName(core.getName());
+    item.setDetail(core.getDetail());
+    item.setKind(toLsp(core.getKind()));
+    item.setUri(core.getLocation().getUri());
+    item.setRange(toLsp(core.getLocation().getRange()));
+    item.setSelectionRange(toLsp(core.getSelectionRange()));
+    item.setData(core.getSymbolFqn());
+    return item;
+  }
+
+  public static CallHierarchyIncomingCall toLsp(IncomingCallInfo core) {
+    CallHierarchyIncomingCall call = new CallHierarchyIncomingCall();
+    call.setFrom(toLsp(core.getFrom()));
+    call.setFromRanges(core.getFromRanges().stream().map(LspTypeConverter::toLsp).toList());
+    return call;
+  }
+
+  public static CallHierarchyOutgoingCall toLsp(OutgoingCallInfo core) {
+    CallHierarchyOutgoingCall call = new CallHierarchyOutgoingCall();
+    call.setTo(toLsp(core.getTo()));
+    call.setFromRanges(core.getFromRanges().stream().map(LspTypeConverter::toLsp).toList());
+    return call;
   }
 
   public static List<Diagnostic> toCoreDiagnostics(List<org.eclipse.lsp4j.Diagnostic> diagnostics) {
