@@ -96,7 +96,7 @@ public final class BinaryTypeReader {
       if (!"<clinit>".equals(name)) {
         members.add(
             new BinaryMemberDetails(
-                SymbolInfo.Kind.METHOD,
+                "<init>".equals(name) ? SymbolInfo.Kind.CONSTRUCTOR : SymbolInfo.Kind.METHOD,
                 name,
                 descriptor,
                 signature == null ? "" : signature,

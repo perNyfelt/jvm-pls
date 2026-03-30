@@ -24,9 +24,13 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.Test;
 
 import se.alipsa.jvmpls.core.CoreFacade;
+import se.alipsa.jvmpls.core.model.CodeActionInfo;
 import se.alipsa.jvmpls.core.model.CompletionItem;
 import se.alipsa.jvmpls.core.model.Diagnostic;
+import se.alipsa.jvmpls.core.model.HoverInfo;
 import se.alipsa.jvmpls.core.model.Range;
+import se.alipsa.jvmpls.core.model.SignatureHelpInfo;
+import se.alipsa.jvmpls.core.model.SymbolInfo;
 import se.alipsa.jvmpls.server.JvmPlsTextDocumentService;
 
 class JvmPlsTextDocumentServiceTest {
@@ -148,6 +152,38 @@ class JvmPlsTextDocumentServiceTest {
     public Optional<se.alipsa.jvmpls.core.model.Location> definition(
         String uri, se.alipsa.jvmpls.core.model.Position position) {
       return definitionResult;
+    }
+
+    @Override
+    public Optional<HoverInfo> hover(String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return Optional.empty();
+    }
+
+    @Override
+    public List<se.alipsa.jvmpls.core.model.Location> references(
+        String uri, se.alipsa.jvmpls.core.model.Position position, boolean includeDeclaration) {
+      return List.of();
+    }
+
+    @Override
+    public List<SymbolInfo> documentSymbols(String uri) {
+      return List.of();
+    }
+
+    @Override
+    public List<SymbolInfo> workspaceSymbols(String query) {
+      return List.of();
+    }
+
+    @Override
+    public Optional<SignatureHelpInfo> signatureHelp(
+        String uri, se.alipsa.jvmpls.core.model.Position position) {
+      return Optional.empty();
+    }
+
+    @Override
+    public List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics) {
+      return List.of();
     }
   }
 }

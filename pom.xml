@@ -178,6 +178,18 @@
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>verify</phase>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 </project>

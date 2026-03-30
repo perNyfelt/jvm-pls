@@ -86,4 +86,8 @@ public interface SymbolReporter {
       InferenceConfidence confidence) {
     reportConstructor(ownerClassFqn, signature, loc, modifiers);
   }
+
+  default void reportReference(String targetFqn, Location useSite) {
+    LOG.fine("Reference reporting is not implemented by this SymbolReporter for " + targetFqn);
+  }
 }

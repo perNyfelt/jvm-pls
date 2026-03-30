@@ -25,4 +25,22 @@ public interface CoreFacade {
 
   /** Go to definition for the token at a position. */
   Optional<Location> definition(String uri, Position position);
+
+  /** Hover payload for the symbol or expression at a position. */
+  Optional<HoverInfo> hover(String uri, Position position);
+
+  /** Find references for the symbol at a position. */
+  List<Location> references(String uri, Position position, boolean includeDeclaration);
+
+  /** Source declarations for one file. */
+  List<SymbolInfo> documentSymbols(String uri);
+
+  /** Workspace/global symbol search. */
+  List<SymbolInfo> workspaceSymbols(String query);
+
+  /** Signature help for the active call site. */
+  Optional<SignatureHelpInfo> signatureHelp(String uri, Position position);
+
+  /** Quick fixes and code actions for the current file/range. */
+  List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics);
 }

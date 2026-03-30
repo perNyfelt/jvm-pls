@@ -8,10 +8,15 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import se.alipsa.jvmpls.core.CoreFacade;
+import se.alipsa.jvmpls.core.model.CodeActionInfo;
 import se.alipsa.jvmpls.core.model.CompletionItem;
 import se.alipsa.jvmpls.core.model.Diagnostic;
+import se.alipsa.jvmpls.core.model.HoverInfo;
 import se.alipsa.jvmpls.core.model.Location;
 import se.alipsa.jvmpls.core.model.Position;
+import se.alipsa.jvmpls.core.model.Range;
+import se.alipsa.jvmpls.core.model.SignatureHelpInfo;
+import se.alipsa.jvmpls.core.model.SymbolInfo;
 
 final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
 
@@ -93,6 +98,36 @@ final class ReloadableCoreFacade implements CoreFacade, AutoCloseable {
   @Override
   public Optional<Location> definition(String uri, Position position) {
     return requireDelegate().definition(uri, position);
+  }
+
+  @Override
+  public Optional<HoverInfo> hover(String uri, Position position) {
+    return requireDelegate().hover(uri, position);
+  }
+
+  @Override
+  public List<Location> references(String uri, Position position, boolean includeDeclaration) {
+    return requireDelegate().references(uri, position, includeDeclaration);
+  }
+
+  @Override
+  public List<SymbolInfo> documentSymbols(String uri) {
+    return requireDelegate().documentSymbols(uri);
+  }
+
+  @Override
+  public List<SymbolInfo> workspaceSymbols(String query) {
+    return requireDelegate().workspaceSymbols(query);
+  }
+
+  @Override
+  public Optional<SignatureHelpInfo> signatureHelp(String uri, Position position) {
+    return requireDelegate().signatureHelp(uri, position);
+  }
+
+  @Override
+  public List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics) {
+    return requireDelegate().codeActions(uri, range, diagnostics);
   }
 
   private CoreFacade requireDelegate() {

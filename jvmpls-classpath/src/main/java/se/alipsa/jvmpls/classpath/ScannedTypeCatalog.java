@@ -37,6 +37,27 @@ final class ScannedTypeCatalog {
     return byPackage.getOrDefault(pkg, List.of());
   }
 
+  List<ScannedTypeDescriptor> search(String query, int limit) {
+    if (query == null || query.isBlank() || limit <= 0) {
+      return List.of();
+    }
+    String normalized = query.toLowerCase(java.util.Locale.ROOT);
+    return byFqn.values().stream()
+        .filter(
+            descriptor -> {
+              String simple = descriptor.simpleName().toLowerCase(java.util.Locale.ROOT);
+              String fqn = descriptor.fqName().toLowerCase(java.util.Locale.ROOT);
+              return simple.contains(normalized) || fqn.contains(normalized);
+            })
+        .sorted(
+            java.util.Comparator.comparingInt(
+                    (ScannedTypeDescriptor descriptor) -> score(descriptor, normalized))
+                .reversed()
+                .thenComparing(ScannedTypeDescriptor::fqName))
+        .limit(limit)
+        .toList();
+  }
+
   boolean isEmpty() {
     return byFqn.isEmpty();
   }
@@ -81,5 +102,23 @@ final class ScannedTypeCatalog {
       source.forEach((key, value) -> copy.put(key, List.copyOf(value)));
       return Map.copyOf(copy);
     }
+  }
+
+  private static int score(ScannedTypeDescriptor descriptor, String normalizedQuery) {
+    String simple = descriptor.simpleName().toLowerCase(java.util.Locale.ROOT);
+    String fqn = descriptor.fqName().toLowerCase(java.util.Locale.ROOT);
+    if (simple.equals(normalizedQuery)) {
+      return 1000;
+    }
+    if (simple.startsWith(normalizedQuery)) {
+      return 800;
+    }
+    if (simple.contains(normalizedQuery)) {
+      return 650;
+    }
+    if (fqn.startsWith(normalizedQuery)) {
+      return 500;
+    }
+    return 400;
   }
 }

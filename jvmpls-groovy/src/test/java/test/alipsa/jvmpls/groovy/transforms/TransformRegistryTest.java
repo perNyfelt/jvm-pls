@@ -143,8 +143,7 @@ class TransformRegistryTest {
           public List<SymbolInfo> membersOf(String ownerFqn) {
             if ("other.Consumer".equals(ownerFqn) || "other.Sub".equals(ownerFqn)) {
               return List.of(method("demo.Base", "prot", Set.of("protected")));
-            }
-            else {
+            } else {
               return List.of();
             }
           }

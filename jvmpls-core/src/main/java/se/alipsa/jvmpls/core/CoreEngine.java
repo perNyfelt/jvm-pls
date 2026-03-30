@@ -6,6 +6,7 @@ import java.util.concurrent.Executor;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 import se.alipsa.jvmpls.core.model.*;
 import se.alipsa.jvmpls.core.types.JvmType;
@@ -15,6 +16,8 @@ import se.alipsa.jvmpls.core.types.MethodSignature;
 /** Default implementation of CoreFacade. */
 public final class CoreEngine implements CoreFacade {
   private static final Logger LOG = Logger.getLogger(CoreEngine.class.getName());
+  private static final Pattern DOC_COMMENT_PREFIX =
+      Pattern.compile("^\\s*(?:/\\*+|\\*+/?|//+)\\s?");
 
   private final PluginRegistry plugins;
   private final SymbolIndex index;
@@ -100,6 +103,107 @@ public final class CoreEngine implements CoreFacade {
     } catch (Exception e) {
       LOG.log(Level.SEVERE, "Definition request failed for " + uri, e);
       return Optional.empty();
+    }
+  }
+
+  @Override
+  public Optional<HoverInfo> hover(String uri, Position position) {
+    String text = docs.get(uri);
+    if (text == null) {
+      return Optional.empty();
+    }
+    SymbolInfo declaration = symbolDeclaredAt(uri, position);
+    if (declaration != null) {
+      return Optional.of(SymbolPresentation.hover(declaration, documentationFor(declaration)));
+    }
+    JvmLangPlugin plugin = pluginByUri.get(uri);
+    if (plugin == null) {
+      return Optional.empty();
+    }
+    try {
+      Optional<HoverInfo> pluginHover = plugin.hover(uri, position, index);
+      if (pluginHover.isPresent()) {
+        return pluginHover;
+      }
+      int offset = TokenUtil.positionToOffset(text, position.line, position.column);
+      String token = TokenUtil.tokenAt(text, offset);
+      SymbolInfo symbol = plugin.resolveSymbol(uri, token, position, index);
+      if (symbol == null) {
+        return Optional.empty();
+      }
+      return Optional.of(SymbolPresentation.hover(symbol, documentationFor(symbol)));
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Hover request failed for " + uri, e);
+      return Optional.empty();
+    }
+  }
+
+  @Override
+  public List<Location> references(String uri, Position position, boolean includeDeclaration) {
+    String text = docs.get(uri);
+    JvmLangPlugin plugin = pluginByUri.get(uri);
+    if (text == null || plugin == null) {
+      return List.of();
+    }
+    try {
+      SymbolInfo target = symbolDeclaredAt(uri, position);
+      if (target == null) {
+        int offset = TokenUtil.positionToOffset(text, position.line, position.column);
+        String token = TokenUtil.tokenAt(text, offset);
+        target = plugin.resolveSymbol(uri, token, position, index);
+      }
+      if (target == null) {
+        return List.of();
+      }
+      LinkedHashMap<String, Location> results = new LinkedHashMap<>();
+      if (includeDeclaration && target.getLocation() != null) {
+        results.put(locationKey(target.getLocation()), target.getLocation());
+      }
+      for (Location location : index.referencesTo(target.getFqName())) {
+        results.put(locationKey(location), location);
+      }
+      return List.copyOf(results.values());
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Reference request failed for " + uri, e);
+      return List.of();
+    }
+  }
+
+  @Override
+  public List<SymbolInfo> documentSymbols(String uri) {
+    return index.declarationsInFile(uri);
+  }
+
+  @Override
+  public List<SymbolInfo> workspaceSymbols(String query) {
+    return index.search(query, 100);
+  }
+
+  @Override
+  public Optional<SignatureHelpInfo> signatureHelp(String uri, Position position) {
+    JvmLangPlugin plugin = pluginByUri.get(uri);
+    if (plugin == null) {
+      return Optional.empty();
+    }
+    try {
+      return plugin.signatureHelp(uri, position, index);
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Signature help request failed for " + uri, e);
+      return Optional.empty();
+    }
+  }
+
+  @Override
+  public List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics) {
+    JvmLangPlugin plugin = pluginByUri.get(uri);
+    if (plugin == null) {
+      return List.of();
+    }
+    try {
+      return plugin.codeActions(uri, range, diagnostics, index);
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Code action request failed for " + uri, e);
+      return List.of();
     }
   }
 
@@ -353,6 +457,119 @@ public final class CoreEngine implements CoreFacade {
                 origin,
                 confidence));
       }
+
+      @Override
+      public void reportReference(String targetFqn, Location useSite) {
+        index.reportReference(uri, targetFqn, useSite);
+      }
     };
+  }
+
+  private SymbolInfo symbolDeclaredAt(String uri, Position position) {
+    return index.declarationsInFile(uri).stream()
+        .filter(symbol -> contains(symbol.getLocation(), position))
+        .min(
+            Comparator.comparingInt(
+                symbol ->
+                    spanLength(
+                        symbol.getLocation() == null ? null : symbol.getLocation().getRange())))
+        .orElse(null);
+  }
+
+  private String documentationFor(SymbolInfo symbol) {
+    Location location = symbol.getLocation();
+    if (location == null) {
+      return "";
+    }
+    String source = docs.get(location.getUri());
+    if ((source == null || source.isBlank()) && location.getUri().startsWith("file:")) {
+      try {
+        source =
+            java.nio.file.Files.readString(
+                java.nio.file.Path.of(java.net.URI.create(location.getUri())));
+      } catch (Exception ignored) {
+        source = null;
+      }
+    }
+    if (source == null || source.isBlank()) {
+      return "";
+    }
+    return extractDocComment(source, location.getRange().start.line);
+  }
+
+  private static String extractDocComment(String source, int declarationLine) {
+    String[] lines = source.split("\\R", -1);
+    if (declarationLine <= 0 || declarationLine > lines.length) {
+      return "";
+    }
+    int line = declarationLine - 1;
+    while (line >= 0 && lines[line].isBlank()) {
+      line--;
+    }
+    if (line < 0) {
+      return "";
+    }
+    List<String> docLines = new ArrayList<>();
+    if (lines[line].stripLeading().startsWith("//")) {
+      while (line >= 0 && lines[line].stripLeading().startsWith("//")) {
+        docLines.add(lines[line]);
+        line--;
+      }
+      Collections.reverse(docLines);
+      return sanitizeDocLines(docLines);
+    }
+    if (!lines[line].contains("*/")) {
+      return "";
+    }
+    while (line >= 0) {
+      docLines.add(lines[line]);
+      if (lines[line].contains("/*")) {
+        Collections.reverse(docLines);
+        return sanitizeDocLines(docLines);
+      }
+      line--;
+    }
+    return "";
+  }
+
+  private static String sanitizeDocLines(List<String> docLines) {
+    return docLines.stream()
+        .map(line -> DOC_COMMENT_PREFIX.matcher(line.strip()).replaceFirst(""))
+        .map(line -> line.replaceFirst("\\*/\\s*$", "").strip())
+        .filter(line -> !line.isBlank())
+        .reduce((left, right) -> left + "\n" + right)
+        .orElse("");
+  }
+
+  private static boolean contains(Location location, Position position) {
+    if (location == null || location.getRange() == null) {
+      return false;
+    }
+    Range range = location.getRange();
+    return compare(position, range.start) >= 0 && compare(position, range.end) <= 0;
+  }
+
+  private static int compare(Position left, Position right) {
+    int byLine = Integer.compare(left.line, right.line);
+    return byLine != 0 ? byLine : Integer.compare(left.column, right.column);
+  }
+
+  private static int spanLength(Range range) {
+    if (range == null || range.start == null || range.end == null) {
+      return Integer.MAX_VALUE;
+    }
+    return (range.end.line - range.start.line) * 10_000 + (range.end.column - range.start.column);
+  }
+
+  private static String locationKey(Location location) {
+    return location.getUri()
+        + ':'
+        + location.getRange().start.line
+        + ':'
+        + location.getRange().start.column
+        + '-'
+        + location.getRange().end.line
+        + ':'
+        + location.getRange().end.column;
   }
 }
