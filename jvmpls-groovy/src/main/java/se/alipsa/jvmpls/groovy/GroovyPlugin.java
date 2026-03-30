@@ -148,6 +148,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
         applyTransforms(fileUri, cn, reporter, fileCtx);
       }
       analyzeDynamicFeatures(fileUri, classes.values(), modules, reporter, fileCtx);
+      reportReferences(fileUri, classes.values(), modules, reporter, fileCtx);
       runSemanticDiagnostics(fileUri, classes.values(), diags, fileCtx);
 
     } catch (MultipleCompilationErrorsException mce) {
@@ -242,9 +243,11 @@ public final class GroovyPlugin implements JvmLangPlugin {
       }
     }
 
+    String currentPkg = ctx.pkg == null ? "" : ctx.pkg;
+
     // 1) Same-package class
-    if (!ctx.pkg.isBlank()) {
-      String fqn = ctx.pkg + "." + symbolName;
+    if (!currentPkg.isBlank()) {
+      String fqn = currentPkg + "." + symbolName;
       var hit = core.findByFqn(fqn);
       if (hit.isPresent()) return hit.get();
     }
@@ -409,6 +412,48 @@ public final class GroovyPlugin implements JvmLangPlugin {
   }
 
   @Override
+  public Optional<SignatureHelpInfo> signatureHelp(
+      String fileUri, Position position, CoreQuery core) {
+    String content = contentByUri.get(fileUri);
+    FileCtx ctx = ctxByUri.get(fileUri);
+    if (content == null || ctx == null) {
+      return Optional.empty();
+    }
+    CoreQuery effectiveCore = coreQuery != null ? coreQuery : core;
+    if (effectiveCore == null) {
+      return Optional.empty();
+    }
+    return groovyCallSite(fileUri, position, content, ctx, effectiveCore)
+        .map(
+            callSite ->
+                new SignatureHelpInfo(
+                    callSite.candidates().stream()
+                        .map(
+                            candidate ->
+                                new CallableInfo(
+                                    renderCallable(candidate),
+                                    parameterLabels(candidate),
+                                    "",
+                                    candidate.getLocation()))
+                        .toList(),
+                    callSite.activeSignature(),
+                    callSite.activeParameter()));
+  }
+
+  @Override
+  public List<CodeActionInfo> codeActions(
+      String fileUri, Range range, List<Diagnostic> diagnostics, CoreQuery core) {
+    String content = contentByUri.get(fileUri);
+    if (content == null) {
+      return List.of();
+    }
+    ArrayList<CodeActionInfo> actions = new ArrayList<>();
+    actions.addAll(autoImportActions(fileUri, content, range, core));
+    organizeImportsAction(content).ifPresent(actions::add);
+    return List.copyOf(actions);
+  }
+
+  @Override
   public void forget(String fileUri) {
     ctxByUri.remove(fileUri);
     contentByUri.remove(fileUri);
@@ -444,6 +489,12 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
     reporter.reportClass(fqn, new Location(fileUri, toRange(cn)), isInterface, isEnum, isAnno);
     recordTypeHierarchy(fileUri, fqn, cn, ctx);
+    if (cn.getSuperClass() != null) {
+      reportTypeReference(fileUri, cn.getSuperClass(), reporter);
+    }
+    for (ClassNode interfaceNode : cn.getInterfaces()) {
+      reportTypeReference(fileUri, interfaceNode, reporter);
+    }
     if (ctx.primaryClassFqn.isBlank()) {
       ctx.primaryClassFqn = fqn;
     }
@@ -464,6 +515,10 @@ public final class GroovyPlugin implements JvmLangPlugin {
           methodSig(mn, ctx),
           new Location(fileUri, toRange(mn)),
           modifiers(mn.getModifiers()));
+      reportTypeReference(fileUri, mn.getReturnType(), reporter);
+      for (Parameter parameter : mn.getParameters()) {
+        reportTypeReference(fileUri, parameter.getType(), reporter);
+      }
     }
     for (ConstructorNode constructor : cn.getDeclaredConstructors()) {
       if (constructor.getDeclaringClass() != cn) continue;
@@ -473,6 +528,9 @@ public final class GroovyPlugin implements JvmLangPlugin {
           constructorSig(constructor, ctx),
           new Location(fileUri, toRange(constructor)),
           modifiers(constructor.getModifiers()));
+      for (Parameter parameter : constructor.getParameters()) {
+        reportTypeReference(fileUri, parameter.getType(), reporter);
+      }
     }
     // Fields
     for (FieldNode fn : cn.getFields()) {
@@ -483,6 +541,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
           typeOf(fn.getType(), ctx),
           new Location(fileUri, toRange(fn)),
           modifiers(fn.getModifiers()));
+      reportTypeReference(fileUri, fn.getType(), reporter);
     }
     // Groovy properties as fields
     for (PropertyNode pn : cn.getProperties()) {
@@ -492,6 +551,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
           typeOf(pn.getType(), ctx),
           new Location(fileUri, toRange(pn)),
           modifiers(pn.getModifiers()));
+      reportTypeReference(fileUri, pn.getType(), reporter);
     }
 
     // Script-scope typed variables behave like fields for completion purposes.
@@ -558,6 +618,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
       String cls = imp.getClassName();
       if (cls != null && !cls.isBlank()) {
         fileCtx.singleImports.add(cls);
+        reporter.reportReference(cls, new Location(fileUri, toRange(imp)));
         String alias = imp.getAlias();
         if (alias != null && !alias.isBlank()) {
           fileCtx.aliasToFqn.put(alias, cls);
@@ -996,6 +1057,226 @@ public final class GroovyPlugin implements JvmLangPlugin {
     }
   }
 
+  private record GroovyCallSite(
+      List<SymbolInfo> candidates, int activeSignature, int activeParameter) {}
+
+  private void reportReferences(
+      String fileUri,
+      Collection<ClassNode> classes,
+      Collection<ModuleNode> modules,
+      SymbolReporter reporter,
+      FileCtx ctx) {
+    CoreQuery core = coreQuery;
+    if (core == null) {
+      return;
+    }
+    GroovyMemberResolver resolver = memberResolver(core);
+    for (ClassNode classNode : classes) {
+      String ownerFqn = ownerFqn(classNode, ctx);
+      new ClassCodeVisitorSupport() {
+        @Override
+        protected SourceUnit getSourceUnit() {
+          return null;
+        }
+
+        @Override
+        public void visitMethodCallExpression(MethodCallExpression call) {
+          String methodName = call.getMethodAsString();
+          String receiverType = receiverTypeFor(call, ownerFqn, ctx, resolver, fileUri);
+          if (methodName != null && receiverType != null) {
+            resolver.membersAt(fileUri, toRange(call).start, receiverType).stream()
+                .filter(symbol -> symbol.getKind() == SymbolInfo.Kind.METHOD)
+                .filter(symbol -> methodName.equals(memberName(symbol)))
+                .forEach(
+                    symbol ->
+                        reporter.reportReference(
+                            symbol.getFqName(), new Location(fileUri, toRange(call))));
+          }
+          super.visitMethodCallExpression(call);
+        }
+
+        @Override
+        public void visitPropertyExpression(PropertyExpression expression) {
+          String receiverType = receiverTypeFor(expression, ownerFqn, ctx, resolver, fileUri);
+          String propertyName = expression.getPropertyAsString();
+          if (receiverType != null && propertyName != null) {
+            resolver.membersAt(fileUri, toRange(expression).start, receiverType).stream()
+                .filter(symbol -> isPropertySymbol(symbol, propertyName))
+                .forEach(
+                    symbol ->
+                        reporter.reportReference(
+                            symbol.getFqName(), new Location(fileUri, toRange(expression))));
+          }
+          super.visitPropertyExpression(expression);
+        }
+
+        @Override
+        public void visitConstructorCallExpression(ConstructorCallExpression call) {
+          String typeFqn = resolveTypeName(call.getType().getName(), ctx);
+          List<SymbolInfo> constructors = core.constructorsOf(typeFqn);
+          Location location = new Location(fileUri, toRange(call));
+          if (constructors.isEmpty()) {
+            reporter.reportReference(typeFqn, location);
+          } else {
+            constructors.forEach(symbol -> reporter.reportReference(symbol.getFqName(), location));
+          }
+          super.visitConstructorCallExpression(call);
+        }
+      }.visitClass(classNode);
+    }
+    for (ModuleNode module : modules) {
+      if (module.getStatementBlock() == null) {
+        continue;
+      }
+      String ownerFqn = ctx.primaryClassFqn;
+      new ClassCodeVisitorSupport() {
+        @Override
+        protected SourceUnit getSourceUnit() {
+          return null;
+        }
+
+        @Override
+        public void visitMethodCallExpression(MethodCallExpression call) {
+          String methodName = call.getMethodAsString();
+          String receiverType = receiverTypeFor(call, ownerFqn, ctx, resolver, fileUri);
+          if (methodName != null && receiverType != null) {
+            resolver.membersAt(fileUri, toRange(call).start, receiverType).stream()
+                .filter(symbol -> symbol.getKind() == SymbolInfo.Kind.METHOD)
+                .filter(symbol -> methodName.equals(memberName(symbol)))
+                .forEach(
+                    symbol ->
+                        reporter.reportReference(
+                            symbol.getFqName(), new Location(fileUri, toRange(call))));
+          }
+          super.visitMethodCallExpression(call);
+        }
+      }.visitBlockStatement(module.getStatementBlock());
+    }
+  }
+
+  private void reportTypeReference(String fileUri, ClassNode type, SymbolReporter reporter) {
+    if (type == null || type == ClassHelper.DYNAMIC_TYPE) {
+      return;
+    }
+    String fqn = type.getName();
+    if (fqn == null || fqn.isBlank() || JvmTypes.isPrimitive(fqn)) {
+      return;
+    }
+    reporter.reportReference(fqn, new Location(fileUri, toRange(type)));
+  }
+
+  private Optional<GroovyCallSite> groovyCallSite(
+      String fileUri, Position position, String content, FileCtx ctx, CoreQuery core) {
+    GroovyMemberResolver resolver = memberResolver(core);
+    try {
+      List<ASTNode> nodes =
+          new AstBuilder().buildFromString(CompilePhase.CONVERSION, false, content);
+      GroovyCallSite best = null;
+      for (ASTNode node : nodes) {
+        if (node instanceof ModuleNode moduleNode && moduleNode.getStatementBlock() != null) {
+          best =
+              pickBetter(
+                  best,
+                  scanGroovyCallSite(
+                      moduleNode.getStatementBlock(),
+                      fileUri,
+                      position,
+                      content,
+                      ctx,
+                      resolver,
+                      core));
+        } else if (node instanceof ClassNode classNode) {
+          best =
+              pickBetter(
+                  best,
+                  scanGroovyCallSite(classNode, fileUri, position, content, ctx, resolver, core));
+        } else if (node instanceof ModuleNode moduleNode) {
+          for (ClassNode classNode : moduleNode.getClasses()) {
+            best =
+                pickBetter(
+                    best,
+                    scanGroovyCallSite(classNode, fileUri, position, content, ctx, resolver, core));
+          }
+        }
+      }
+      return Optional.ofNullable(best);
+    } catch (RuntimeException e) {
+      return Optional.empty();
+    }
+  }
+
+  private GroovyCallSite scanGroovyCallSite(
+      ASTNode root,
+      String fileUri,
+      Position position,
+      String content,
+      FileCtx ctx,
+      GroovyMemberResolver resolver,
+      CoreQuery core) {
+    String ownerFqn = ownerAt(fileUri, position, ctx.primaryClassFqn);
+    final GroovyCallSite[] best = new GroovyCallSite[1];
+    ClassCodeVisitorSupport visitor =
+        new ClassCodeVisitorSupport() {
+          @Override
+          protected SourceUnit getSourceUnit() {
+            return null;
+          }
+
+          @Override
+          public void visitMethodCallExpression(MethodCallExpression call) {
+            Range range = toRange(call);
+            if (contains(range, position)) {
+              String receiverType = receiverTypeFor(call, ownerFqn, ctx, resolver, fileUri);
+              String methodName = call.getMethodAsString();
+              if (receiverType != null && methodName != null) {
+                List<SymbolInfo> candidates =
+                    resolver.membersAt(fileUri, position, receiverType).stream()
+                        .filter(symbol -> symbol.getKind() == SymbolInfo.Kind.METHOD)
+                        .filter(symbol -> methodName.equals(memberName(symbol)))
+                        .toList();
+                if (!candidates.isEmpty()) {
+                  int activeParameter = activeParameterIndex(content, range, position);
+                  best[0] =
+                      pickBetter(
+                          best[0],
+                          new GroovyCallSite(
+                              candidates,
+                              activeSignature(candidates, activeParameter + 1),
+                              activeParameter));
+                }
+              }
+            }
+            super.visitMethodCallExpression(call);
+          }
+
+          @Override
+          public void visitConstructorCallExpression(ConstructorCallExpression call) {
+            Range range = toRange(call);
+            if (contains(range, position)) {
+              String typeFqn = resolveTypeName(call.getType().getName(), ctx);
+              List<SymbolInfo> candidates = core.constructorsOf(typeFqn);
+              if (!candidates.isEmpty()) {
+                int activeParameter = activeParameterIndex(content, range, position);
+                best[0] =
+                    pickBetter(
+                        best[0],
+                        new GroovyCallSite(
+                            candidates,
+                            activeSignature(candidates, activeParameter + 1),
+                            activeParameter));
+              }
+            }
+            super.visitConstructorCallExpression(call);
+          }
+        };
+    if (root instanceof ClassNode classNode) {
+      visitor.visitClass(classNode);
+    } else if (root instanceof org.codehaus.groovy.ast.stmt.BlockStatement blockStatement) {
+      visitor.visitBlockStatement(blockStatement);
+    }
+    return best[0];
+  }
+
   private String receiverTypeFor(
       MethodCallExpression call,
       String ownerFqn,
@@ -1328,7 +1609,8 @@ public final class GroovyPlugin implements JvmLangPlugin {
     List<String> declarations = signature.typeParameters();
     LinkedHashSet<String> requiredTypeParameters = new LinkedHashSet<>();
     for (String declaration : declarations) {
-      if (referencesTypeParameter(declaration, parameterTypes, signature.returnType(), throwsTypes)) {
+      if (referencesTypeParameter(
+          declaration, parameterTypes, signature.returnType(), throwsTypes)) {
         collectTypeParameterDependencies(declaration, declarations, requiredTypeParameters);
       }
     }
@@ -1497,6 +1779,216 @@ public final class GroovyPlugin implements JvmLangPlugin {
     } catch (ClassNotFoundException | LinkageError ignored) {
       return false;
     }
+  }
+
+  private static GroovyCallSite pickBetter(GroovyCallSite left, GroovyCallSite right) {
+    if (left == null) {
+      return right;
+    }
+    if (right == null) {
+      return left;
+    }
+    int leftWidth = maxParameterCount(left.candidates());
+    int rightWidth = maxParameterCount(right.candidates());
+    return rightWidth <= leftWidth ? right : left;
+  }
+
+  private static int compare(Position left, Position right) {
+    int byLine = Integer.compare(left.line, right.line);
+    return byLine != 0 ? byLine : Integer.compare(left.column, right.column);
+  }
+
+  private static int activeParameterIndex(String content, Range range, Position position) {
+    int startOffset =
+        se.alipsa.jvmpls.core.TokenUtil.positionToOffset(
+            content, range.start.line, range.start.column);
+    int cursorOffset =
+        se.alipsa.jvmpls.core.TokenUtil.positionToOffset(content, position.line, position.column);
+    int openParen = content.indexOf('(', Math.max(0, startOffset));
+    if (openParen < 0 || openParen >= cursorOffset) {
+      return 0;
+    }
+    int depth = 0;
+    int commas = 0;
+    for (int i = openParen + 1; i < Math.min(cursorOffset, content.length()); i++) {
+      char ch = content.charAt(i);
+      if (ch == '(') {
+        depth++;
+      } else if (ch == ')') {
+        if (depth == 0) {
+          break;
+        }
+        depth--;
+      } else if (ch == ',' && depth == 0) {
+        commas++;
+      }
+    }
+    return commas;
+  }
+
+  private static int activeSignature(List<SymbolInfo> candidates, int argumentCount) {
+    SymbolInfo best =
+        candidates.stream()
+            .min(Comparator.comparingInt(symbol -> arityDistance(symbol, argumentCount)))
+            .orElse(candidates.getFirst());
+    return Math.max(0, candidates.indexOf(best));
+  }
+
+  private static int maxParameterCount(List<SymbolInfo> candidates) {
+    return candidates.stream()
+        .map(SymbolInfo::getMethodSignature)
+        .filter(Objects::nonNull)
+        .mapToInt(signature -> signature.parameterTypes().size())
+        .max()
+        .orElse(1);
+  }
+
+  private static int arityDistance(SymbolInfo symbol, int argumentCount) {
+    MethodSignature signature = symbol.getMethodSignature();
+    return signature == null
+        ? Integer.MAX_VALUE
+        : Math.abs(signature.parameterTypes().size() - argumentCount);
+  }
+
+  private static String renderCallable(SymbolInfo symbol) {
+    MethodSignature signature = symbol.getMethodSignature();
+    if (signature == null) {
+      return symbol.getFqName();
+    }
+    String name =
+        symbol.getKind() == SymbolInfo.Kind.CONSTRUCTOR
+            ? simpleName(symbol.getContainerFqName())
+            : memberName(symbol);
+    StringBuilder builder = new StringBuilder();
+    if (symbol.getKind() == SymbolInfo.Kind.METHOD) {
+      builder.append(signature.returnType().displayName()).append(' ');
+    }
+    builder.append(name).append('(');
+    for (int i = 0; i < signature.parameterTypes().size(); i++) {
+      if (i > 0) {
+        builder.append(", ");
+      }
+      builder.append(signature.parameterTypes().get(i).displayName());
+      if (i < signature.parameterNames().size()) {
+        builder.append(' ').append(signature.parameterNames().get(i));
+      }
+    }
+    return builder.append(')').toString();
+  }
+
+  private static List<String> parameterLabels(SymbolInfo symbol) {
+    MethodSignature signature = symbol.getMethodSignature();
+    if (signature == null) {
+      return List.of();
+    }
+    ArrayList<String> labels = new ArrayList<>();
+    for (int i = 0; i < signature.parameterTypes().size(); i++) {
+      String name =
+          i < signature.parameterNames().size() ? signature.parameterNames().get(i) : "arg" + i;
+      labels.add(signature.parameterTypes().get(i).displayName() + " " + name);
+    }
+    return List.copyOf(labels);
+  }
+
+  private List<CodeActionInfo> autoImportActions(
+      String fileUri, String content, Range range, CoreQuery core) {
+    Position cursor = range == null ? new Position(0, 0) : range.start;
+    String token = completionPrefix(content, cursor);
+    if (token.contains(".")) {
+      token = token.substring(token.lastIndexOf('.') + 1);
+    }
+    if (token.isBlank() || !Character.isUpperCase(token.charAt(0))) {
+      return List.of();
+    }
+    if (resolveSymbol(fileUri, token, cursor, core) != null) {
+      return List.of();
+    }
+    return core.findBySimpleName(token).stream()
+        .filter(GroovyPlugin::isType)
+        .map(SymbolInfo::getFqName)
+        .distinct()
+        .map(
+            fqn -> {
+              List<TextEdit> edits = maybeImportEdit(content, fqn);
+              if (edits.isEmpty()) {
+                return null;
+              }
+              return new CodeActionInfo("Import " + fqn, "quickfix", edits, true);
+            })
+        .filter(Objects::nonNull)
+        .toList();
+  }
+
+  private Optional<CodeActionInfo> organizeImportsAction(String content) {
+    java.util.regex.Pattern importPattern =
+        java.util.regex.Pattern.compile(
+            "(?m)^\\s*import(?:\\s+static)?\\s+([\\w.]+(?:\\s+as\\s+\\w+)?)\\s*$");
+    java.util.regex.Matcher matcher = importPattern.matcher(content);
+    ArrayList<String> imports = new ArrayList<>();
+    int start = -1;
+    int end = -1;
+    while (matcher.find()) {
+      if (start < 0) {
+        start = matcher.start();
+      }
+      end = matcher.end();
+      imports.add(matcher.group(1));
+    }
+    if (imports.isEmpty()) {
+      return Optional.empty();
+    }
+    Set<String> usedTypes = referencedSimpleTypes(content);
+    List<String> organized =
+        imports.stream()
+            .distinct()
+            .filter(
+                imp -> {
+                  String raw = imp.replaceAll("\\s+as\\s+\\w+$", "");
+                  return raw.endsWith(".*") || usedTypes.contains(simpleName(raw));
+                })
+            .sorted()
+            .toList();
+    String replacement =
+        organized.isEmpty()
+            ? ""
+            : organized.stream().map(imp -> "import " + imp + "\n").reduce("", String::concat);
+    if (replacement.equals(content.substring(start, end))) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new CodeActionInfo(
+            "Organize imports",
+            "source.organizeImports",
+            List.of(new TextEdit(rangeForOffsets(content, start, end), replacement)),
+            true));
+  }
+
+  private static Set<String> referencedSimpleTypes(String content) {
+    LinkedHashSet<String> names = new LinkedHashSet<>();
+    java.util.regex.Matcher matcher =
+        java.util.regex.Pattern.compile("\\b[A-Z][A-Za-z0-9_]*\\b").matcher(content);
+    while (matcher.find()) {
+      names.add(matcher.group());
+    }
+    return Set.copyOf(names);
+  }
+
+  private static Range rangeForOffsets(String content, int startOffset, int endOffset) {
+    return new Range(positionAtOffset(content, startOffset), positionAtOffset(content, endOffset));
+  }
+
+  private static Position positionAtOffset(String content, int offset) {
+    int line = 0;
+    int column = 0;
+    for (int i = 0; i < Math.min(offset, content.length()); i++) {
+      if (content.charAt(i) == '\n') {
+        line++;
+        column = 0;
+      } else {
+        column++;
+      }
+    }
+    return new Position(line, column);
   }
 
   private static String simpleName(String fqn) {

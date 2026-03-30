@@ -27,6 +27,8 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
   private final ConcurrentMap<String, SymbolInfo> materialized = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, List<SymbolInfo>> materializedMembers =
       new ConcurrentHashMap<>();
+  private final ConcurrentMap<String, List<SymbolInfo>> materializedConstructors =
+      new ConcurrentHashMap<>();
 
   public ClasspathSymbolProvider(ScannedTypeCatalog catalog, BinaryTypeReader reader) {
     this.catalog = catalog;
@@ -54,6 +56,11 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
   }
 
   @Override
+  public List<SymbolInfo> constructorsOf(String ownerFqn) {
+    return materializedConstructors.computeIfAbsent(ownerFqn, this::materializeConstructors);
+  }
+
+  @Override
   public List<String> supertypesOf(String typeFqn) {
     return catalog
         .findByFqn(typeFqn)
@@ -68,6 +75,11 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
               return List.copyOf(supertypes);
             })
         .orElseGet(List::of);
+  }
+
+  @Override
+  public List<SymbolInfo> search(String query, int limit) {
+    return catalog.search(query, limit).stream().map(this::materialize).toList();
   }
 
   private SymbolInfo materialize(ScannedTypeDescriptor descriptor) {
@@ -106,7 +118,7 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
     }
     BinaryTypeDetails details = reader.read(owner.resourceUri());
     for (BinaryMemberDetails member : details.members()) {
-      if ("<init>".equals(member.name())) {
+      if (member.kind() == SymbolInfo.Kind.CONSTRUCTOR) {
         continue;
       }
       SymbolInfo symbol = materializeMember(owner, member);
@@ -122,6 +134,17 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
           .findByFqn(interfaceFqName)
           .ifPresent(parent -> collectMembers(parent, results, visited));
     }
+  }
+
+  private List<SymbolInfo> materializeConstructors(String ownerFqn) {
+    Optional<ScannedTypeDescriptor> owner = catalog.findByFqn(ownerFqn);
+    if (owner.isEmpty()) {
+      return List.of();
+    }
+    return reader.read(owner.get().resourceUri()).members().stream()
+        .filter(member -> member.kind() == SymbolInfo.Kind.CONSTRUCTOR)
+        .map(member -> materializeMember(owner.get(), member))
+        .toList();
   }
 
   private static String memberIdentity(SymbolInfo symbol) {
@@ -167,6 +190,23 @@ public final class ClasspathSymbolProvider implements SymbolProvider {
           List.of(),
           resolvedType,
           null);
+    }
+    if (member.kind() == SymbolInfo.Kind.CONSTRUCTOR) {
+      MethodSignature methodSignature =
+          JvmTypes.fromMethodDescriptor(
+              member.descriptor(), List.of(), member.exceptions(), member.modifiers());
+      String legacy = JvmTypes.toLegacyMethodSignature(methodSignature);
+      return new SymbolInfo(
+          "binary",
+          SymbolInfo.Kind.CONSTRUCTOR,
+          owner.fqName() + "#<init>" + legacy,
+          owner.fqName(),
+          location,
+          legacy,
+          member.modifiers(),
+          List.of(),
+          null,
+          methodSignature);
     }
     MethodSignature methodSignature =
         JvmTypes.fromMethodDescriptor(

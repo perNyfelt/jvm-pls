@@ -129,6 +129,12 @@ class JvmPlsLanguageServerTest {
     assertTrue(
         completionProvider.getTriggerCharacters().contains("."),
         "trigger characters should include '.'");
+    assertNotNull(result.getCapabilities().getHoverProvider());
+    assertNotNull(result.getCapabilities().getReferencesProvider());
+    assertNotNull(result.getCapabilities().getDocumentSymbolProvider());
+    assertNotNull(result.getCapabilities().getWorkspaceSymbolProvider());
+    assertNotNull(result.getCapabilities().getSignatureHelpProvider());
+    assertNotNull(result.getCapabilities().getCodeActionProvider());
 
     assertNotNull(result.getServerInfo(), "serverInfo should not be null");
     assertEquals("jvm-pls", result.getServerInfo().getName());
@@ -229,6 +235,165 @@ class JvmPlsLanguageServerTest {
         containsFoo,
         "completion should contain 'Foo', got: "
             + items.stream().map(CompletionItem::getLabel).toList());
+  }
+
+  @Test
+  void hover_returnsMethodInformation() throws Exception {
+    initialize();
+
+    Path dir = Files.createTempDirectory("jvm-pls-lsp-hover");
+    Path file = dir.resolve("Hello.java");
+    String code =
+        """
+        public class Hello {
+          /** Says hello. */
+          String greet(String name) { return name; }
+        }
+        """;
+    Files.writeString(file, code, StandardCharsets.UTF_8);
+    String uri = file.toUri().toString();
+
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "java", 1, code)));
+    assertNotNull(testClient.awaitDiagnostics(uri, TIMEOUT_SECONDS));
+
+    Hover hover =
+        serverProxy
+            .getTextDocumentService()
+            .hover(new HoverParams(new TextDocumentIdentifier(uri), new Position(2, 10)))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+    assertNotNull(hover);
+    assertNotNull(hover.getContents());
+  }
+
+  @Test
+  void references_workspaceSymbol_andDocumentSymbol_areAvailable() throws Exception {
+    initialize();
+
+    Path dir = Files.createTempDirectory("jvm-pls-lsp-refs");
+    Path pkgDir = Files.createDirectories(dir.resolve("demo"));
+    Path fooFile = pkgDir.resolve("Foo.java");
+    String fooCode = "package demo;\n\npublic class Foo {}\n";
+    Path barFile = pkgDir.resolve("Bar.java");
+    String barCode =
+        """
+        package demo;
+
+        public class Bar {
+          Foo foo = new Foo();
+        }
+        """;
+    Files.writeString(fooFile, fooCode, StandardCharsets.UTF_8);
+    Files.writeString(barFile, barCode, StandardCharsets.UTF_8);
+    String fooUri = fooFile.toUri().toString();
+    String barUri = barFile.toUri().toString();
+
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(fooUri, "java", 1, fooCode)));
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(barUri, "java", 1, barCode)));
+    assertNotNull(testClient.awaitDiagnostics(fooUri, TIMEOUT_SECONDS));
+    assertNotNull(testClient.awaitDiagnostics(barUri, TIMEOUT_SECONDS));
+
+    List<? extends Location> references =
+        serverProxy
+            .getTextDocumentService()
+            .references(
+                new ReferenceParams(
+                    new TextDocumentIdentifier(fooUri),
+                    new Position(2, 13),
+                    new ReferenceContext(false)))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertFalse(references.isEmpty());
+    assertTrue(references.stream().anyMatch(location -> barUri.equals(location.getUri())));
+
+    List<Either<SymbolInformation, DocumentSymbol>> documentSymbols =
+        serverProxy
+            .getTextDocumentService()
+            .documentSymbol(new DocumentSymbolParams(new TextDocumentIdentifier(barUri)))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(
+        documentSymbols.stream()
+            .filter(Either::isLeft)
+            .map(Either::getLeft)
+            .anyMatch(symbol -> "Bar".equals(symbol.getName())));
+
+    Either<List<? extends SymbolInformation>, List<? extends WorkspaceSymbol>> workspaceSymbols =
+        serverProxy
+            .getWorkspaceService()
+            .symbol(new WorkspaceSymbolParams("Foo"))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(
+        (workspaceSymbols.isLeft()
+                && workspaceSymbols.getLeft().stream()
+                    .anyMatch(symbol -> "Foo".equals(symbol.getName())))
+            || (workspaceSymbols.isRight()
+                && workspaceSymbols.getRight().stream()
+                    .anyMatch(symbol -> "Foo".equals(symbol.getName()))));
+  }
+
+  @Test
+  void codeActions_work() throws Exception {
+    initialize();
+
+    Path dir = Files.createTempDirectory("jvm-pls-lsp-actions");
+    Path pkgDir = Files.createDirectories(dir.resolve("demo"));
+    Path fooFile = pkgDir.resolve("Foo.java");
+    String fooCode =
+        """
+        package demo;
+
+        public class Foo {
+          Foo(String value) {}
+          void greet(String value) {}
+        }
+        """;
+    Path barFile = pkgDir.resolve("Bar.java");
+    String barCode =
+        """
+        package demo;
+
+        public class Bar {
+          void test() {
+            Foo foo = new Foo("x");
+            foo.greet("x");
+            List<String> names = null;
+          }
+        }
+        """;
+    Files.writeString(fooFile, fooCode, StandardCharsets.UTF_8);
+    Files.writeString(barFile, barCode, StandardCharsets.UTF_8);
+    String fooUri = fooFile.toUri().toString();
+    String barUri = barFile.toUri().toString();
+
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(fooUri, "java", 1, fooCode)));
+    serverProxy
+        .getTextDocumentService()
+        .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(barUri, "java", 1, barCode)));
+    assertNotNull(testClient.awaitDiagnostics(fooUri, TIMEOUT_SECONDS));
+    PublishDiagnosticsParams barDiagnostics = testClient.awaitDiagnostics(barUri, TIMEOUT_SECONDS);
+    assertNotNull(barDiagnostics);
+
+    List<Either<Command, CodeAction>> actions =
+        serverProxy
+            .getTextDocumentService()
+            .codeAction(
+                new CodeActionParams(
+                    new TextDocumentIdentifier(barUri),
+                    new Range(new Position(6, 8), new Position(6, 8)),
+                    new CodeActionContext(barDiagnostics.getDiagnostics())))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(
+        actions.stream()
+            .filter(Either::isRight)
+            .map(Either::getRight)
+            .anyMatch(action -> action.getTitle().contains("Import java.util.List")));
   }
 
   // -------------------------------------------------------------------------

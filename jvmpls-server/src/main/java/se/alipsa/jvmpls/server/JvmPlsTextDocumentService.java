@@ -170,6 +170,137 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
         });
   }
 
+  @Override
+  public CompletableFuture<Hover> hover(HoverParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/hover after shutdown");
+      return rejectedAfterShutdown("textDocument/hover");
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/hover before initialization");
+      return rejectedUnavailable("textDocument/hover");
+    }
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            String uri = params.getTextDocument().getUri();
+            se.alipsa.jvmpls.core.model.Position corePos =
+                LspTypeConverter.toCore(params.getPosition());
+            return core.hover(uri, corePos).map(LspTypeConverter::toLsp).orElse(null);
+          } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Hover request failed", e);
+            return null;
+          }
+        });
+  }
+
+  @Override
+  public CompletableFuture<SignatureHelp> signatureHelp(SignatureHelpParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/signatureHelp after shutdown");
+      return rejectedAfterShutdown("textDocument/signatureHelp");
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/signatureHelp before initialization");
+      return rejectedUnavailable("textDocument/signatureHelp");
+    }
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            String uri = params.getTextDocument().getUri();
+            se.alipsa.jvmpls.core.model.Position corePos =
+                LspTypeConverter.toCore(params.getPosition());
+            return core.signatureHelp(uri, corePos).map(LspTypeConverter::toLsp).orElse(null);
+          } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Signature help request failed", e);
+            return null;
+          }
+        });
+  }
+
+  @Override
+  public CompletableFuture<List<? extends Location>> references(ReferenceParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/references after shutdown");
+      return rejectedAfterShutdown("textDocument/references");
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/references before initialization");
+      return rejectedUnavailable("textDocument/references");
+    }
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            String uri = params.getTextDocument().getUri();
+            se.alipsa.jvmpls.core.model.Position corePos =
+                LspTypeConverter.toCore(params.getPosition());
+            boolean includeDeclaration =
+                params.getContext() != null && params.getContext().isIncludeDeclaration();
+            return core.references(uri, corePos, includeDeclaration).stream()
+                .map(LspTypeConverter::toLsp)
+                .toList();
+          } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "References request failed", e);
+            return List.of();
+          }
+        });
+  }
+
+  @Override
+  public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
+      DocumentSymbolParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/documentSymbol after shutdown");
+      return rejectedAfterShutdown("textDocument/documentSymbol");
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/documentSymbol before initialization");
+      return rejectedUnavailable("textDocument/documentSymbol");
+    }
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            return core.documentSymbols(params.getTextDocument().getUri()).stream()
+                .map(LspTypeConverter::toLspSymbol)
+                .map(Either::<SymbolInformation, DocumentSymbol>forLeft)
+                .toList();
+          } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Document symbol request failed", e);
+            return List.of();
+          }
+        });
+  }
+
+  @Override
+  public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(CodeActionParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/codeAction after shutdown");
+      return rejectedAfterShutdown("textDocument/codeAction");
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/codeAction before initialization");
+      return rejectedUnavailable("textDocument/codeAction");
+    }
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            String uri = params.getTextDocument().getUri();
+            se.alipsa.jvmpls.core.model.Range coreRange =
+                LspTypeConverter.toCore(params.getRange());
+            List<se.alipsa.jvmpls.core.model.Diagnostic> diagnostics =
+                LspTypeConverter.toCoreDiagnostics(
+                    params.getContext() == null ? List.of() : params.getContext().getDiagnostics());
+            return core.codeActions(uri, coreRange, diagnostics).stream()
+                .map(action -> LspTypeConverter.toLsp(uri, action))
+                .map(Either::<Command, CodeAction>forRight)
+                .toList();
+          } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Code action request failed", e);
+            return List.of();
+          }
+        });
+  }
+
   private static <T> CompletableFuture<T> rejectedAfterShutdown(String method) {
     return CompletableFuture.failedFuture(
         new ResponseErrorException(

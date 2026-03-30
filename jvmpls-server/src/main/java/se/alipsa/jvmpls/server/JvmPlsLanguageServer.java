@@ -66,7 +66,8 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
         new JvmPlsTextDocumentService(
             coreFacade, openDocuments, this::acceptingRequests, coreFacade::isReady);
     this.workspaceService =
-        new JvmPlsWorkspaceService(this::acceptingRequests, ignored -> {}, ignored -> {});
+        new JvmPlsWorkspaceService(
+            this::acceptingRequests, ignored -> {}, ignored -> {}, coreFacade::workspaceSymbols);
     this.processExit = Objects.requireNonNull(processExit, "processExit");
   }
 
@@ -90,7 +91,8 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
         new JvmPlsWorkspaceService(
             this::acceptingRequests,
             settings -> workspaceManager.didChangeConfiguration(settings),
-            params -> workspaceManager.didChangeWatchedFiles(params));
+            params -> workspaceManager.didChangeWatchedFiles(params),
+            coreFacade::workspaceSymbols);
     this.processExit = Objects.requireNonNull(processExit, "processExit");
   }
 
@@ -116,6 +118,16 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
     capabilities.setCompletionProvider(completionOptions);
 
     capabilities.setDefinitionProvider(true);
+    capabilities.setHoverProvider(true);
+    capabilities.setReferencesProvider(true);
+    capabilities.setDocumentSymbolProvider(true);
+    capabilities.setWorkspaceSymbolProvider(true);
+
+    SignatureHelpOptions signatureHelpOptions = new SignatureHelpOptions();
+    signatureHelpOptions.setTriggerCharacters(List.of("(", ","));
+    capabilities.setSignatureHelpProvider(signatureHelpOptions);
+
+    capabilities.setCodeActionProvider(true);
 
     InitializeResult result = new InitializeResult(capabilities);
     result.setServerInfo(new ServerInfo(ServerMetadata.NAME, ServerMetadata.VERSION));
@@ -204,6 +216,42 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
       public java.util.Optional<se.alipsa.jvmpls.core.model.Location> definition(
           String uri, se.alipsa.jvmpls.core.model.Position position) {
         return delegate.definition(uri, position);
+      }
+
+      @Override
+      public java.util.Optional<se.alipsa.jvmpls.core.model.HoverInfo> hover(
+          String uri, se.alipsa.jvmpls.core.model.Position position) {
+        return delegate.hover(uri, position);
+      }
+
+      @Override
+      public List<se.alipsa.jvmpls.core.model.Location> references(
+          String uri, se.alipsa.jvmpls.core.model.Position position, boolean includeDeclaration) {
+        return delegate.references(uri, position, includeDeclaration);
+      }
+
+      @Override
+      public List<se.alipsa.jvmpls.core.model.SymbolInfo> documentSymbols(String uri) {
+        return delegate.documentSymbols(uri);
+      }
+
+      @Override
+      public List<se.alipsa.jvmpls.core.model.SymbolInfo> workspaceSymbols(String query) {
+        return delegate.workspaceSymbols(query);
+      }
+
+      @Override
+      public java.util.Optional<se.alipsa.jvmpls.core.model.SignatureHelpInfo> signatureHelp(
+          String uri, se.alipsa.jvmpls.core.model.Position position) {
+        return delegate.signatureHelp(uri, position);
+      }
+
+      @Override
+      public List<se.alipsa.jvmpls.core.model.CodeActionInfo> codeActions(
+          String uri,
+          se.alipsa.jvmpls.core.model.Range range,
+          List<se.alipsa.jvmpls.core.model.Diagnostic> diagnostics) {
+        return delegate.codeActions(uri, range, diagnostics);
       }
     };
   }

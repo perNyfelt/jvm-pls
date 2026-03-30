@@ -123,6 +123,36 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
     return engine.definition(uri, position);
   }
 
+  @Override
+  public Optional<HoverInfo> hover(String uri, Position position) {
+    return engine.hover(uri, position);
+  }
+
+  @Override
+  public List<Location> references(String uri, Position position, boolean includeDeclaration) {
+    return engine.references(uri, position, includeDeclaration);
+  }
+
+  @Override
+  public List<SymbolInfo> documentSymbols(String uri) {
+    return engine.documentSymbols(uri);
+  }
+
+  @Override
+  public List<SymbolInfo> workspaceSymbols(String query) {
+    return engine.workspaceSymbols(query);
+  }
+
+  @Override
+  public Optional<SignatureHelpInfo> signatureHelp(String uri, Position position) {
+    return engine.signatureHelp(uri, position);
+  }
+
+  @Override
+  public List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics) {
+    return engine.codeActions(uri, range, diagnostics);
+  }
+
   // --- Lifecycle --------------------------------------------------------------------------------
 
   @Override

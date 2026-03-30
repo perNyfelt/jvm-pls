@@ -24,4 +24,8 @@ public interface SymbolProvider {
   default List<String> supertypesOf(String typeFqn) {
     return List.of();
   }
+
+  default List<SymbolInfo> search(String query, int limit) {
+    return List.of();
+  }
 }

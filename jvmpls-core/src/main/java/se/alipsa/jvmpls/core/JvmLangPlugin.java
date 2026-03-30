@@ -1,6 +1,7 @@
 package se.alipsa.jvmpls.core;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -48,6 +49,23 @@ public interface JvmLangPlugin {
 
   /** Language-specific completions. */
   default List<CompletionItem> completions(String fileUri, Position position, CoreQuery core) {
+    return List.of();
+  }
+
+  /** Hover query for plugin-specific expression resolution. */
+  default Optional<HoverInfo> hover(String fileUri, Position position, CoreQuery core) {
+    return Optional.empty();
+  }
+
+  /** Signature help query for plugin-specific call resolution. */
+  default Optional<SignatureHelpInfo> signatureHelp(
+      String fileUri, Position position, CoreQuery core) {
+    return Optional.empty();
+  }
+
+  /** Plugin-contributed code actions. */
+  default List<CodeActionInfo> codeActions(
+      String fileUri, Range range, List<Diagnostic> diagnostics, CoreQuery core) {
     return List.of();
   }
 
