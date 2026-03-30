@@ -99,6 +99,7 @@ public final class JavaPlugin implements JvmLangPlugin {
         cu.accept(
             new TreeScanner<Void, Void>() {
               String owner; // current enclosing FQN
+              String callableFqn;
               int methodDepth;
               final Deque<Map<String, String>> localTypes = new ArrayDeque<>();
 
@@ -118,6 +119,8 @@ public final class JavaPlugin implements JvmLangPlugin {
                       isEnum,
                       isAnno);
                   recordTypeHierarchy(fileUri, fqn, node, pkg, visibleImports);
+                  reporter.reportDirectSupertypes(
+                      fqn, directSupertypesByType.getOrDefault(fqn, List.of()));
                   reportHierarchyReferences(
                       fileUri, cu, node, pkg, visibleImports, reporter, trees);
 
@@ -137,35 +140,43 @@ public final class JavaPlugin implements JvmLangPlugin {
               public Void visitMethod(MethodTree node, Void p) {
                 methodDepth++;
                 localTypes.push(new LinkedHashMap<>());
-                if (owner != null) {
-                  MethodSignature signature = methodSig(node, pkg, visibleImports);
-                  Location location = new Location(fileUri, toRange(cu, node, trees));
-                  if (node.getReturnType() == null || node.getName().contentEquals("<init>")) {
-                    reporter.reportConstructor(
-                        owner, signature, location, modifiers(node.getModifiers().getFlags()));
-                  } else {
-                    reporter.reportMethod(
-                        owner,
-                        node.getName().toString(),
-                        signature,
-                        location,
-                        modifiers(node.getModifiers().getFlags()));
-                    reportTypeReference(
-                        node.getReturnType(), pkg, visibleImports, location, reporter);
-                  }
-                  for (VariableTree parameter : node.getParameters()) {
-                    String resolvedType = typeFqn(parameter.getType(), pkg, visibleImports);
-                    if (resolvedType != null) {
-                      localTypes.peek().put(parameter.getName().toString(), resolvedType);
-                      reporter.reportReference(
-                          resolvedType,
-                          new Location(fileUri, toRange(cu, parameter.getType(), trees)));
+                String previousCallable = callableFqn;
+                try {
+                  if (owner != null) {
+                    MethodSignature signature = methodSig(node, pkg, visibleImports);
+                    Location location = new Location(fileUri, toRange(cu, node, trees));
+                    if (node.getReturnType() == null || node.getName().contentEquals("<init>")) {
+                      callableFqn = owner + "#<init>" + JvmTypes.toLegacyMethodSignature(signature);
+                      reporter.reportConstructor(
+                          owner, signature, location, modifiers(node.getModifiers().getFlags()));
+                    } else {
+                      callableFqn =
+                          owner
+                              + "#"
+                              + node.getName()
+                              + JvmTypes.toLegacyMethodSignature(signature);
+                      reporter.reportMethod(
+                          owner,
+                          node.getName().toString(),
+                          signature,
+                          location,
+                          modifiers(node.getModifiers().getFlags()));
+                      reportTypeReference(
+                          node.getReturnType(), pkg, visibleImports, location, reporter);
+                    }
+                    for (VariableTree parameter : node.getParameters()) {
+                      String resolvedType = typeFqn(parameter.getType(), pkg, visibleImports);
+                      if (resolvedType != null) {
+                        localTypes.peek().put(parameter.getName().toString(), resolvedType);
+                        reporter.reportReference(
+                            resolvedType,
+                            new Location(fileUri, toRange(cu, parameter.getType(), trees)));
+                      }
                     }
                   }
-                }
-                try {
                   return super.visitMethod(node, p);
                 } finally {
+                  callableFqn = previousCallable;
                   localTypes.pop();
                   methodDepth--;
                 }
@@ -219,18 +230,36 @@ public final class JavaPlugin implements JvmLangPlugin {
               @Override
               public Void visitNewClass(NewClassTree node, Void p) {
                 reportConstructorReference(
-                    fileUri, cu, node, owner, pkg, visibleImports, localTypes, reporter, trees);
+                    fileUri,
+                    cu,
+                    node,
+                    callableFqn,
+                    pkg,
+                    visibleImports,
+                    localTypes,
+                    reporter,
+                    trees);
                 return super.visitNewClass(node, p);
               }
 
               @Override
               public Void visitMethodInvocation(MethodInvocationTree node, Void p) {
                 reportMethodReference(
-                    fileUri, cu, node, owner, pkg, visibleImports, localTypes, reporter, trees);
+                    fileUri,
+                    cu,
+                    node,
+                    callableFqn,
+                    owner,
+                    pkg,
+                    visibleImports,
+                    localTypes,
+                    reporter,
+                    trees);
                 return super.visitMethodInvocation(node, p);
               }
             },
             null);
+        reportExecutableReferences(fileUri, cu, pkg, visibleImports, reporter, trees);
       }
       try {
         task.analyze();
@@ -319,6 +348,15 @@ public final class JavaPlugin implements JvmLangPlugin {
       String fileUri, String symbolName, Position position, CoreQuery core) {
     SymbolInfo resolved = resolveSymbolAtPosition(fileUri, symbolName, position, core);
     return resolved != null ? resolved : resolveSymbol(fileUri, symbolName, core);
+  }
+
+  @Override
+  public Optional<SymbolInfo> typeDefinition(String fileUri, Position position, CoreQuery core) {
+    String content = contentByUri.get(fileUri);
+    if (content == null) {
+      return Optional.empty();
+    }
+    return parseTypeDefinition(fileUri, content, position, core);
   }
 
   @Override
@@ -734,6 +772,178 @@ public final class JavaPlugin implements JvmLangPlugin {
     return Optional.empty();
   }
 
+  private Optional<SymbolInfo> parseTypeDefinition(
+      String fileUri, String content, Position position, CoreQuery core) {
+    String symbolName =
+        se.alipsa.jvmpls.core.TokenUtil.tokenAt(
+            content,
+            se.alipsa.jvmpls.core.TokenUtil.positionToOffset(
+                content, position.line, position.column));
+    if (symbolName == null || symbolName.isBlank()) {
+      return Optional.empty();
+    }
+    try (var fm = COMPILER.getStandardFileManager(null, null, null)) {
+      JavaFileObject mem =
+          new SimpleJavaFileObject(URI.create(fileUri), JavaFileObject.Kind.SOURCE) {
+            @Override
+            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+              return content;
+            }
+          };
+      JavacTask task =
+          (JavacTask)
+              COMPILER.getTask(
+                  null, fm, null, List.of("-proc:none", "-source", "21"), null, List.of(mem));
+      Trees trees = Trees.instance(task);
+      for (CompilationUnitTree cu : task.parse()) {
+        String pkg = cu.getPackageName() == null ? "" : cu.getPackageName().toString();
+        List<String> visibleImports = visibleImports(cu);
+        SymbolCandidate candidate =
+            new TreePathScanner<SymbolCandidate, Void>() {
+              String owner = primaryClassFqn(content);
+              final Deque<Map<String, String>> localTypes = new ArrayDeque<>();
+
+              @Override
+              public SymbolCandidate visitClass(ClassTree node, Void unused) {
+                String previousOwner = owner;
+                String simple = node.getSimpleName().toString();
+                if (!simple.isBlank()) {
+                  owner = qualifiedTypeName(simple, pkg);
+                }
+                try {
+                  return best(
+                      super.visitClass(node, unused),
+                      typeDefinitionForClass(
+                          node, cu, trees, position, symbolName, pkg, visibleImports, core));
+                } finally {
+                  owner = previousOwner;
+                }
+              }
+
+              @Override
+              public SymbolCandidate visitMethod(MethodTree node, Void unused) {
+                localTypes.push(new LinkedHashMap<>());
+                for (VariableTree parameter : node.getParameters()) {
+                  String type = typeFqn(parameter.getType(), pkg, visibleImports);
+                  if (type != null) {
+                    localTypes.peek().put(parameter.getName().toString(), type);
+                  }
+                }
+                try {
+                  return best(
+                      best(
+                          super.visitMethod(node, unused),
+                          typeDefinitionForMethod(
+                              node, cu, trees, position, symbolName, pkg, visibleImports, core)),
+                      null);
+                } finally {
+                  localTypes.pop();
+                }
+              }
+
+              @Override
+              public SymbolCandidate visitBlock(BlockTree node, Void unused) {
+                localTypes.push(new LinkedHashMap<>());
+                try {
+                  return super.visitBlock(node, unused);
+                } finally {
+                  localTypes.pop();
+                }
+              }
+
+              @Override
+              public SymbolCandidate visitVariable(VariableTree node, Void unused) {
+                if (!localTypes.isEmpty()) {
+                  String type = typeFqn(node.getType(), pkg, visibleImports);
+                  if (type != null && node.getName() != null) {
+                    localTypes.peek().put(node.getName().toString(), type);
+                  }
+                }
+                return best(
+                    localTypeCandidate(
+                        node,
+                        owner,
+                        pkg,
+                        visibleImports,
+                        localTypes,
+                        cu,
+                        trees,
+                        position,
+                        symbolName,
+                        core),
+                    super.visitVariable(node, unused));
+              }
+
+              @Override
+              public SymbolCandidate visitIdentifier(IdentifierTree node, Void unused) {
+                return best(
+                    identifierTypeCandidate(
+                        fileUri,
+                        node,
+                        owner,
+                        pkg,
+                        visibleImports,
+                        localTypes,
+                        cu,
+                        trees,
+                        position,
+                        symbolName,
+                        core),
+                    super.visitIdentifier(node, unused));
+              }
+
+              @Override
+              public SymbolCandidate visitMemberSelect(MemberSelectTree node, Void unused) {
+                return best(
+                    memberTypeCandidate(
+                        node,
+                        owner,
+                        pkg,
+                        visibleImports,
+                        localTypes,
+                        cu,
+                        trees,
+                        position,
+                        symbolName,
+                        core),
+                    super.visitMemberSelect(node, unused));
+              }
+
+              @Override
+              public SymbolCandidate visitMethodInvocation(MethodInvocationTree node, Void unused) {
+                return best(
+                    invocationReturnTypeCandidate(
+                        node,
+                        owner,
+                        pkg,
+                        visibleImports,
+                        localTypes,
+                        cu,
+                        trees,
+                        position,
+                        symbolName,
+                        core),
+                    super.visitMethodInvocation(node, unused));
+              }
+
+              @Override
+              public SymbolCandidate visitNewClass(NewClassTree node, Void unused) {
+                return best(
+                    constructedTypeCandidate(
+                        node, cu, trees, position, symbolName, pkg, visibleImports, core),
+                    super.visitNewClass(node, unused));
+              }
+            }.scan(cu, null);
+        if (candidate != null) {
+          return Optional.of(candidate.symbol());
+        }
+      }
+    } catch (IOException ignored) {
+      return Optional.empty();
+    }
+    return Optional.empty();
+  }
+
   private static SymbolCandidate best(SymbolCandidate left, SymbolCandidate right) {
     if (left == null) {
       return right;
@@ -752,6 +962,164 @@ public final class JavaPlugin implements JvmLangPlugin {
       return left;
     }
     return left.span() <= right.span() ? left : right;
+  }
+
+  private SymbolCandidate typeDefinitionForClass(
+      ClassTree node,
+      CompilationUnitTree cu,
+      Trees trees,
+      Position position,
+      String symbolName,
+      String pkg,
+      List<String> visibleImports,
+      CoreQuery core) {
+    return null;
+  }
+
+  private SymbolCandidate typeDefinitionForMethod(
+      MethodTree node,
+      CompilationUnitTree cu,
+      Trees trees,
+      Position position,
+      String symbolName,
+      String pkg,
+      List<String> visibleImports,
+      CoreQuery core) {
+    if (!contains(cu, node, trees, position) || !node.getName().contentEquals(symbolName)) {
+      return null;
+    }
+    return symbolForTypeFqn(
+        typeFqn(node.getReturnType(), pkg, visibleImports), span(toRange(cu, node, trees)), core);
+  }
+
+  private SymbolCandidate localTypeCandidate(
+      VariableTree node,
+      String ownerFqn,
+      String pkg,
+      List<String> visibleImports,
+      Deque<Map<String, String>> localTypes,
+      CompilationUnitTree cu,
+      Trees trees,
+      Position position,
+      String symbolName,
+      CoreQuery core) {
+    if (!contains(cu, node, trees, position) || !node.getName().contentEquals(symbolName)) {
+      return null;
+    }
+    return symbolForTypeFqn(
+        typeFqn(node.getType(), pkg, visibleImports), span(toRange(cu, node, trees)), core);
+  }
+
+  private SymbolCandidate identifierTypeCandidate(
+      String fileUri,
+      IdentifierTree node,
+      String ownerFqn,
+      String pkg,
+      List<String> visibleImports,
+      Deque<Map<String, String>> localTypes,
+      CompilationUnitTree cu,
+      Trees trees,
+      Position position,
+      String symbolName,
+      CoreQuery core) {
+    if (!contains(cu, node, trees, position) || !node.getName().contentEquals(symbolName)) {
+      return null;
+    }
+    String typeFqn = lookupLocalType(localTypes, symbolName);
+    if (typeFqn == null) {
+      typeFqn = lookupFieldType(ownerFqn, symbolName, core);
+    }
+    if (typeFqn == null) {
+      SymbolInfo symbol = resolveSymbol(fileUri, symbolName, core);
+      typeFqn = symbol == null ? null : symbol.getFqName();
+    }
+    return symbolForTypeFqn(typeFqn, span(toRange(cu, node, trees)), core);
+  }
+
+  private SymbolCandidate memberTypeCandidate(
+      MemberSelectTree node,
+      String ownerFqn,
+      String pkg,
+      List<String> visibleImports,
+      Deque<Map<String, String>> localTypes,
+      CompilationUnitTree cu,
+      Trees trees,
+      Position position,
+      String symbolName,
+      CoreQuery core) {
+    if (!contains(cu, node, trees, position) || !node.getIdentifier().contentEquals(symbolName)) {
+      return null;
+    }
+    String receiverType =
+        expressionType(node.getExpression(), ownerFqn, pkg, visibleImports, localTypes, core);
+    if (receiverType == null) {
+      return null;
+    }
+    for (SymbolInfo symbol : core.membersOf(receiverType)) {
+      if (symbol.getKind() == SymbolInfo.Kind.FIELD
+          && symbolName.equals(memberName(symbol))
+          && symbol.getResolvedType() instanceof ClassType classType) {
+        return symbolForTypeFqn(classType.fqName(), span(toRange(cu, node, trees)), core);
+      }
+    }
+    return null;
+  }
+
+  private SymbolCandidate invocationReturnTypeCandidate(
+      MethodInvocationTree node,
+      String ownerFqn,
+      String pkg,
+      List<String> visibleImports,
+      Deque<Map<String, String>> localTypes,
+      CompilationUnitTree cu,
+      Trees trees,
+      Position position,
+      String symbolName,
+      CoreQuery core) {
+    if (!contains(cu, node, trees, position)
+        || !Objects.equals(invokedMethodName(node), symbolName)) {
+      return null;
+    }
+    String receiverType =
+        receiverType(node.getMethodSelect(), ownerFqn, pkg, visibleImports, localTypes, core);
+    if (receiverType == null) {
+      return null;
+    }
+    for (SymbolInfo candidate :
+        matchingMethods(receiverType, symbolName, node.getArguments().size(), core)) {
+      if (candidate.getMethodSignature() != null
+          && candidate.getMethodSignature().returnType() instanceof ClassType classType) {
+        return symbolForTypeFqn(classType.fqName(), span(toRange(cu, node, trees)), core);
+      }
+    }
+    return null;
+  }
+
+  private SymbolCandidate constructedTypeCandidate(
+      NewClassTree node,
+      CompilationUnitTree cu,
+      Trees trees,
+      Position position,
+      String symbolName,
+      String pkg,
+      List<String> visibleImports,
+      CoreQuery core) {
+    if (!contains(cu, node, trees, position)) {
+      return null;
+    }
+    String typeFqn = typeFqn(node.getIdentifier(), pkg, visibleImports);
+    if (typeFqn == null || !simpleName(typeFqn).equals(symbolName)) {
+      return null;
+    }
+    return symbolForTypeFqn(typeFqn, span(toRange(cu, node, trees)), core);
+  }
+
+  private SymbolCandidate symbolForTypeFqn(String typeFqn, int span, CoreQuery core) {
+    if (typeFqn == null) {
+      return null;
+    }
+    SymbolInfo symbol = core.findByFqn(typeFqn).orElse(null);
+    return symbol == null ? null : new SymbolCandidate(symbol, span);
   }
 
   private SymbolCandidate classCandidate(
@@ -1029,7 +1397,7 @@ public final class JavaPlugin implements JvmLangPlugin {
       String fileUri,
       CompilationUnitTree cu,
       NewClassTree node,
-      String ownerFqn,
+      String callerFqn,
       String pkg,
       List<String> visibleImports,
       Deque<Map<String, String>> localTypes,
@@ -1049,13 +1417,20 @@ public final class JavaPlugin implements JvmLangPlugin {
       reporter.reportReference(typeFqn, location);
       return;
     }
-    constructors.forEach(symbol -> reporter.reportReference(symbol.getFqName(), location));
+    constructors.forEach(
+        symbol -> {
+          reporter.reportReference(symbol.getFqName(), location);
+          if (callerFqn != null && !callerFqn.isBlank()) {
+            reporter.reportCall(callerFqn, symbol.getFqName(), location);
+          }
+        });
   }
 
   private void reportMethodReference(
       String fileUri,
       CompilationUnitTree cu,
       MethodInvocationTree node,
+      String callerFqn,
       String ownerFqn,
       String pkg,
       List<String> visibleImports,
@@ -1076,7 +1451,120 @@ public final class JavaPlugin implements JvmLangPlugin {
     for (SymbolInfo candidate :
         matchingMethods(receiverType, methodName, node.getArguments().size(), core)) {
       reporter.reportReference(candidate.getFqName(), location);
+      if (callerFqn != null && !callerFqn.isBlank()) {
+        reporter.reportCall(callerFqn, candidate.getFqName(), location);
+      }
     }
+  }
+
+  private void reportExecutableReferences(
+      String fileUri,
+      CompilationUnitTree cu,
+      String pkg,
+      List<String> visibleImports,
+      SymbolReporter reporter,
+      Trees trees) {
+    CoreQuery core = coreQuery;
+    if (core == null) {
+      return;
+    }
+    cu.accept(
+        new TreeScanner<Void, Void>() {
+          String owner;
+          String callableFqn;
+          int methodDepth;
+          final Deque<Map<String, String>> localTypes = new ArrayDeque<>();
+
+          @Override
+          public Void visitClass(ClassTree node, Void unused) {
+            String previousOwner = owner;
+            String simple = node.getSimpleName().toString();
+            if (!simple.isBlank()) {
+              owner = qualifiedTypeName(simple, pkg);
+            }
+            try {
+              return super.visitClass(node, unused);
+            } finally {
+              owner = previousOwner;
+            }
+          }
+
+          @Override
+          public Void visitMethod(MethodTree node, Void unused) {
+            methodDepth++;
+            localTypes.push(new LinkedHashMap<>());
+            String previousCallable = callableFqn;
+            if (owner != null) {
+              MethodSignature signature = methodSig(node, pkg, visibleImports);
+              callableFqn =
+                  node.getReturnType() == null || node.getName().contentEquals("<init>")
+                      ? owner + "#<init>" + JvmTypes.toLegacyMethodSignature(signature)
+                      : owner + "#" + node.getName() + JvmTypes.toLegacyMethodSignature(signature);
+              for (VariableTree parameter : node.getParameters()) {
+                String resolvedType = typeFqn(parameter.getType(), pkg, visibleImports);
+                if (resolvedType != null) {
+                  localTypes.peek().put(parameter.getName().toString(), resolvedType);
+                }
+              }
+            }
+            try {
+              return super.visitMethod(node, unused);
+            } finally {
+              callableFqn = previousCallable;
+              localTypes.pop();
+              methodDepth--;
+            }
+          }
+
+          @Override
+          public Void visitBlock(BlockTree node, Void unused) {
+            if (methodDepth > 0) {
+              localTypes.push(new LinkedHashMap<>());
+            }
+            try {
+              return super.visitBlock(node, unused);
+            } finally {
+              if (methodDepth > 0) {
+                localTypes.pop();
+              }
+            }
+          }
+
+          @Override
+          public Void visitVariable(VariableTree node, Void unused) {
+            if (methodDepth > 0 && !localTypes.isEmpty()) {
+              String resolvedType = typeFqn(node.getType(), pkg, visibleImports);
+              if (resolvedType != null && node.getName() != null) {
+                localTypes.peek().put(node.getName().toString(), resolvedType);
+              }
+            }
+            return super.visitVariable(node, unused);
+          }
+
+          @Override
+          public Void visitNewClass(NewClassTree node, Void unused) {
+            reportConstructorReference(
+                fileUri, cu, node, callableFqn, pkg, visibleImports, localTypes, reporter, trees);
+            return super.visitNewClass(node, unused);
+          }
+
+          @Override
+          public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
+            reportMethodReference(
+                fileUri,
+                cu,
+                node,
+                callableFqn,
+                owner,
+                pkg,
+                visibleImports,
+                localTypes,
+                reporter,
+                trees);
+            return super.visitMethodInvocation(node, unused);
+          }
+        },
+        null);
   }
 
   private static boolean contains(

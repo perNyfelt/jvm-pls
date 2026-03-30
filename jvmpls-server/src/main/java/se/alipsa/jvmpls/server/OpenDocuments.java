@@ -27,6 +27,11 @@ final class OpenDocuments {
     documentsByUri.remove(uri);
   }
 
+  String text(String uri) {
+    DocumentState state = documentsByUri.get(uri);
+    return state == null ? null : state.text();
+  }
+
   List<DocumentState> snapshot() {
     return new ArrayList<>(documentsByUri.values());
   }

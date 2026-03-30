@@ -441,6 +441,16 @@ public final class GroovyPlugin implements JvmLangPlugin {
   }
 
   @Override
+  public Optional<SymbolInfo> typeDefinition(String fileUri, Position position, CoreQuery core) {
+    String content = contentByUri.get(fileUri);
+    FileCtx ctx = ctxByUri.get(fileUri);
+    if (content == null || ctx == null) {
+      return Optional.empty();
+    }
+    return groovyTypeDefinition(fileUri, position, content, ctx, core);
+  }
+
+  @Override
   public List<CodeActionInfo> codeActions(
       String fileUri, Range range, List<Diagnostic> diagnostics, CoreQuery core) {
     String content = contentByUri.get(fileUri);
@@ -489,6 +499,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
     reporter.reportClass(fqn, new Location(fileUri, toRange(cn)), isInterface, isEnum, isAnno);
     recordTypeHierarchy(fileUri, fqn, cn, ctx);
+    reporter.reportDirectSupertypes(fqn, directSupertypesByType.getOrDefault(fqn, List.of()));
     if (cn.getSuperClass() != null) {
       reportTypeReference(fileUri, cn.getSuperClass(), reporter);
     }
@@ -996,9 +1007,38 @@ public final class GroovyPlugin implements JvmLangPlugin {
     for (ClassNode classNode : classes) {
       String ownerFqn = ownerFqn(classNode, ctx);
       new ClassCodeVisitorSupport() {
+        String currentCallableFqn;
+
         @Override
         protected SourceUnit getSourceUnit() {
           return null;
+        }
+
+        @Override
+        public void visitMethod(MethodNode node) {
+          String previousCallable = currentCallableFqn;
+          currentCallableFqn =
+              ownerFqn
+                  + "#"
+                  + node.getName()
+                  + JvmTypes.toLegacyMethodSignature(methodSig(node, ctx));
+          try {
+            super.visitMethod(node);
+          } finally {
+            currentCallableFqn = previousCallable;
+          }
+        }
+
+        @Override
+        public void visitConstructor(ConstructorNode node) {
+          String previousCallable = currentCallableFqn;
+          currentCallableFqn =
+              ownerFqn + "#<init>" + JvmTypes.toLegacyMethodSignature(methodSig(node, ctx));
+          try {
+            super.visitConstructor(node);
+          } finally {
+            currentCallableFqn = previousCallable;
+          }
         }
 
         @Override
@@ -1074,9 +1114,38 @@ public final class GroovyPlugin implements JvmLangPlugin {
     for (ClassNode classNode : classes) {
       String ownerFqn = ownerFqn(classNode, ctx);
       new ClassCodeVisitorSupport() {
+        String currentCallableFqn;
+
         @Override
         protected SourceUnit getSourceUnit() {
           return null;
+        }
+
+        @Override
+        public void visitMethod(MethodNode node) {
+          String previousCallable = currentCallableFqn;
+          currentCallableFqn =
+              ownerFqn
+                  + "#"
+                  + node.getName()
+                  + JvmTypes.toLegacyMethodSignature(methodSig(node, ctx));
+          try {
+            super.visitMethod(node);
+          } finally {
+            currentCallableFqn = previousCallable;
+          }
+        }
+
+        @Override
+        public void visitConstructor(ConstructorNode node) {
+          String previousCallable = currentCallableFqn;
+          currentCallableFqn =
+              ownerFqn + "#<init>" + JvmTypes.toLegacyMethodSignature(methodSig(node, ctx));
+          try {
+            super.visitConstructor(node);
+          } finally {
+            currentCallableFqn = previousCallable;
+          }
         }
 
         @Override
@@ -1088,9 +1157,13 @@ public final class GroovyPlugin implements JvmLangPlugin {
                 .filter(symbol -> symbol.getKind() == SymbolInfo.Kind.METHOD)
                 .filter(symbol -> methodName.equals(memberName(symbol)))
                 .forEach(
-                    symbol ->
-                        reporter.reportReference(
-                            symbol.getFqName(), new Location(fileUri, toRange(call))));
+                    symbol -> {
+                      Location location = new Location(fileUri, toRange(call));
+                      reporter.reportReference(symbol.getFqName(), location);
+                      if (currentCallableFqn != null && !currentCallableFqn.isBlank()) {
+                        reporter.reportCall(currentCallableFqn, symbol.getFqName(), location);
+                      }
+                    });
           }
           super.visitMethodCallExpression(call);
         }
@@ -1103,9 +1176,13 @@ public final class GroovyPlugin implements JvmLangPlugin {
             resolver.membersAt(fileUri, toRange(expression).start, receiverType).stream()
                 .filter(symbol -> isPropertySymbol(symbol, propertyName))
                 .forEach(
-                    symbol ->
-                        reporter.reportReference(
-                            symbol.getFqName(), new Location(fileUri, toRange(expression))));
+                    symbol -> {
+                      Location location = new Location(fileUri, toRange(expression));
+                      reporter.reportReference(symbol.getFqName(), location);
+                      if (currentCallableFqn != null && !currentCallableFqn.isBlank()) {
+                        reporter.reportCall(currentCallableFqn, symbol.getFqName(), location);
+                      }
+                    });
           }
           super.visitPropertyExpression(expression);
         }
@@ -1118,7 +1195,13 @@ public final class GroovyPlugin implements JvmLangPlugin {
           if (constructors.isEmpty()) {
             reporter.reportReference(typeFqn, location);
           } else {
-            constructors.forEach(symbol -> reporter.reportReference(symbol.getFqName(), location));
+            constructors.forEach(
+                symbol -> {
+                  reporter.reportReference(symbol.getFqName(), location);
+                  if (currentCallableFqn != null && !currentCallableFqn.isBlank()) {
+                    reporter.reportCall(currentCallableFqn, symbol.getFqName(), location);
+                  }
+                });
           }
           super.visitConstructorCallExpression(call);
         }
@@ -1203,6 +1286,143 @@ public final class GroovyPlugin implements JvmLangPlugin {
     } catch (RuntimeException e) {
       return Optional.empty();
     }
+  }
+
+  private record GroovyTypeHit(SymbolInfo symbol, int span) {}
+
+  private Optional<SymbolInfo> groovyTypeDefinition(
+      String fileUri, Position position, String content, FileCtx ctx, CoreQuery core) {
+    String token =
+        se.alipsa.jvmpls.core.TokenUtil.tokenAt(
+            content,
+            se.alipsa.jvmpls.core.TokenUtil.positionToOffset(
+                content, position.line, position.column));
+    if (token == null || token.isBlank()) {
+      return Optional.empty();
+    }
+    GroovyMemberResolver resolver = memberResolver(core);
+    try {
+      List<ASTNode> nodes =
+          new AstBuilder().buildFromString(CompilePhase.CONVERSION, false, content);
+      GroovyTypeHit best = null;
+      for (ASTNode node : nodes) {
+        if (node instanceof ModuleNode moduleNode && moduleNode.getStatementBlock() != null) {
+          best =
+              betterTypeHit(
+                  best,
+                  scanGroovyTypeDefinition(
+                      moduleNode.getStatementBlock(),
+                      fileUri,
+                      position,
+                      token,
+                      ctx,
+                      resolver,
+                      core));
+        } else if (node instanceof ClassNode classNode) {
+          best =
+              betterTypeHit(
+                  best,
+                  scanGroovyTypeDefinition(
+                      classNode, fileUri, position, token, ctx, resolver, core));
+        } else if (node instanceof ModuleNode moduleNode) {
+          for (ClassNode classNode : moduleNode.getClasses()) {
+            best =
+                betterTypeHit(
+                    best,
+                    scanGroovyTypeDefinition(
+                        classNode, fileUri, position, token, ctx, resolver, core));
+          }
+        }
+      }
+      return best == null ? Optional.empty() : Optional.of(best.symbol());
+    } catch (RuntimeException e) {
+      return Optional.empty();
+    }
+  }
+
+  private GroovyTypeHit scanGroovyTypeDefinition(
+      ASTNode root,
+      String fileUri,
+      Position position,
+      String token,
+      FileCtx ctx,
+      GroovyMemberResolver resolver,
+      CoreQuery core) {
+    String ownerFqn = ownerAt(fileUri, position, ctx.primaryClassFqn);
+    final GroovyTypeHit[] best = new GroovyTypeHit[1];
+    ClassCodeVisitorSupport visitor =
+        new ClassCodeVisitorSupport() {
+          @Override
+          protected SourceUnit getSourceUnit() {
+            return null;
+          }
+
+          @Override
+          public void visitVariableExpression(VariableExpression expression) {
+            Range range = toRange(expression);
+            if (contains(range, position) && token.equals(expression.getName())) {
+              String typeFqn =
+                  expressionTypeFqn(expression, ownerFqn, ctx, resolver, fileUri, position);
+              best[0] = betterTypeHit(best[0], groovyTypeHit(typeFqn, range, core));
+            }
+            super.visitVariableExpression(expression);
+          }
+
+          @Override
+          public void visitPropertyExpression(PropertyExpression expression) {
+            Range range = toRange(expression);
+            if (contains(range, position) && token.equals(expression.getPropertyAsString())) {
+              String typeFqn =
+                  expressionTypeFqn(expression, ownerFqn, ctx, resolver, fileUri, position);
+              best[0] = betterTypeHit(best[0], groovyTypeHit(typeFqn, range, core));
+            }
+            super.visitPropertyExpression(expression);
+          }
+
+          @Override
+          public void visitMethodCallExpression(MethodCallExpression call) {
+            Range range = toRange(call);
+            if (contains(range, position) && token.equals(call.getMethodAsString())) {
+              String typeFqn = expressionTypeFqn(call, ownerFqn, ctx, resolver, fileUri, position);
+              best[0] = betterTypeHit(best[0], groovyTypeHit(typeFqn, range, core));
+            }
+            super.visitMethodCallExpression(call);
+          }
+
+          @Override
+          public void visitConstructorCallExpression(ConstructorCallExpression call) {
+            Range range = toRange(call);
+            String typeFqn = resolveTypeName(call.getType().getName(), ctx);
+            if (typeFqn != null && contains(range, position) && token.equals(simpleName(typeFqn))) {
+              best[0] = betterTypeHit(best[0], groovyTypeHit(typeFqn, range, core));
+            }
+            super.visitConstructorCallExpression(call);
+          }
+        };
+    if (root instanceof ClassNode classNode) {
+      visitor.visitClass(classNode);
+    } else if (root instanceof org.codehaus.groovy.ast.stmt.BlockStatement blockStatement) {
+      visitor.visitBlockStatement(blockStatement);
+    }
+    return best[0];
+  }
+
+  private static GroovyTypeHit groovyTypeHit(String typeFqn, Range range, CoreQuery core) {
+    if (typeFqn == null || typeFqn.isBlank()) {
+      return null;
+    }
+    SymbolInfo symbol = core.findByFqn(typeFqn).orElse(null);
+    return symbol == null ? null : new GroovyTypeHit(symbol, span(range));
+  }
+
+  private static GroovyTypeHit betterTypeHit(GroovyTypeHit left, GroovyTypeHit right) {
+    if (left == null) {
+      return right;
+    }
+    if (right == null) {
+      return left;
+    }
+    return left.span() <= right.span() ? left : right;
   }
 
   private GroovyCallSite scanGroovyCallSite(

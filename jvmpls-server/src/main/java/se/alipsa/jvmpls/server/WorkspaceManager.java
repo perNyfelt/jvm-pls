@@ -85,6 +85,10 @@ final class WorkspaceManager {
     }
   }
 
+  WorkspaceSettings workspaceSettings() {
+    return workspaceSettings;
+  }
+
   private boolean shouldRefresh(List<FileEvent> changes) {
     BuildModel model = currentBuildModel;
     Set<Path> watchedFiles = model == null ? Set.of() : Set.copyOf(model.watchedFiles());

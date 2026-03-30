@@ -124,6 +124,11 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
   }
 
   @Override
+  public Optional<Location> typeDefinition(String uri, Position position) {
+    return engine.typeDefinition(uri, position);
+  }
+
+  @Override
   public Optional<HoverInfo> hover(String uri, Position position) {
     return engine.hover(uri, position);
   }
@@ -144,6 +149,11 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
   }
 
   @Override
+  public List<Location> implementations(String uri, Position position) {
+    return engine.implementations(uri, position);
+  }
+
+  @Override
   public Optional<SignatureHelpInfo> signatureHelp(String uri, Position position) {
     return engine.signatureHelp(uri, position);
   }
@@ -151,6 +161,31 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
   @Override
   public List<CodeActionInfo> codeActions(String uri, Range range, List<Diagnostic> diagnostics) {
     return engine.codeActions(uri, range, diagnostics);
+  }
+
+  @Override
+  public Optional<PrepareRenameInfo> prepareRename(String uri, Position position) {
+    return engine.prepareRename(uri, position);
+  }
+
+  @Override
+  public Optional<RenamePlan> rename(String uri, Position position, String newName) {
+    return engine.rename(uri, position, newName);
+  }
+
+  @Override
+  public List<CallHierarchyItemInfo> prepareCallHierarchy(String uri, Position position) {
+    return engine.prepareCallHierarchy(uri, position);
+  }
+
+  @Override
+  public List<IncomingCallInfo> incomingCalls(String symbolFqn) {
+    return engine.incomingCalls(symbolFqn);
+  }
+
+  @Override
+  public List<OutgoingCallInfo> outgoingCalls(String symbolFqn) {
+    return engine.outgoingCalls(symbolFqn);
   }
 
   // --- Lifecycle --------------------------------------------------------------------------------
