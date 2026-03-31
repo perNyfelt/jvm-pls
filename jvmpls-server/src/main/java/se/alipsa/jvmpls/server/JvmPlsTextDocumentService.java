@@ -87,9 +87,8 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
     if (changes == null || changes.isEmpty()) {
       return;
     }
-    // Full-sync: use the last (or only) content change
-    String text = changes.get(changes.size() - 1).getText();
-    openDocuments.change(uri, params.getTextDocument().getVersion(), text);
+    String text =
+        openDocuments.applyIncrementalChanges(uri, params.getTextDocument().getVersion(), changes);
     core.changeFile(uri, text);
   }
 

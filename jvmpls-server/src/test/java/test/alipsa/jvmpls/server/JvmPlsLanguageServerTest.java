@@ -123,7 +123,7 @@ class JvmPlsLanguageServerTest {
     assertTrue(syncCapability.isRight(), "textDocumentSync should be TextDocumentSyncOptions");
     TextDocumentSyncOptions syncOptions = syncCapability.getRight();
     assertTrue(syncOptions.getOpenClose(), "openClose should be true");
-    assertEquals(TextDocumentSyncKind.Full, syncOptions.getChange());
+    assertEquals(TextDocumentSyncKind.Incremental, syncOptions.getChange());
 
     CompletionOptions completionProvider = result.getCapabilities().getCompletionProvider();
     assertNotNull(completionProvider, "completionProvider should not be null");

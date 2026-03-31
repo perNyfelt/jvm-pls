@@ -16,6 +16,7 @@
     <module>jvmpls-groovy</module>
     <module>jvmpls-server</module>
     <module>jvmpls-it</module>
+    <module>jvmpls-bench</module>
   </modules>
 
   <properties>

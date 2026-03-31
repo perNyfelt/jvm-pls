@@ -199,7 +199,13 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
 
   private static void registerExternalProviders(
       SymbolIndex index, List<String> classpath, Path targetJdkHome) {
-    SymbolProviderContext context = new SymbolProviderContext(classpath, targetJdkHome);
+    registerExternalProviders(index, classpath, targetJdkHome, null);
+  }
+
+  private static void registerExternalProviders(
+      SymbolIndex index, List<String> classpath, Path targetJdkHome, Path workspaceRoot) {
+    SymbolProviderContext context =
+        new SymbolProviderContext(classpath, targetJdkHome, workspaceRoot);
     ServiceLoader<SymbolProviderFactory> loader = ServiceLoader.load(SymbolProviderFactory.class);
     for (SymbolProviderFactory factory : loader) {
       for (SymbolProvider provider : factory.createProviders(context)) {

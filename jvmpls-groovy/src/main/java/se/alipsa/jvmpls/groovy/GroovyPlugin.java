@@ -34,6 +34,7 @@ import org.codehaus.groovy.syntax.SyntaxException;
 import se.alipsa.jvmpls.core.CoreQuery;
 import se.alipsa.jvmpls.core.JvmLangPlugin;
 import se.alipsa.jvmpls.core.PluginEnvironment;
+import se.alipsa.jvmpls.core.StructuralHash;
 import se.alipsa.jvmpls.core.SymbolReporter;
 import se.alipsa.jvmpls.core.model.*;
 import se.alipsa.jvmpls.core.types.ArrayType;
@@ -99,6 +100,12 @@ public final class GroovyPlugin implements JvmLangPlugin {
   private volatile CoreQuery coreQuery;
   private volatile TypeResolver typeResolver;
 
+  /** Per-file structural hash for detecting body-only vs structural changes. */
+  private final Map<String, String> structuralHashByUri = new ConcurrentHashMap<>();
+
+  /** Cached diagnostics from the last successful index. */
+  private final Map<String, List<Diagnostic>> cachedDiagsByUri = new ConcurrentHashMap<>();
+
   // Groovy default star imports (visibility without explicit imports)
   private static final List<String> DEFAULT_STAR_IMPORTS =
       List.of("java.lang", "java.util", "java.io", "java.net", "groovy.lang", "groovy.util");
@@ -113,6 +120,17 @@ public final class GroovyPlugin implements JvmLangPlugin {
   @Override
   public List<Diagnostic> index(String fileUri, String content, SymbolReporter reporter) {
     contentByUri.put(fileUri, content);
+
+    // Check structural hash: if only method/script bodies changed, skip full re-parse
+    String newHash = StructuralHash.compute(content);
+    String oldHash = structuralHashByUri.put(fileUri, newHash);
+    if (oldHash != null && oldHash.equals(newHash)) {
+      List<Diagnostic> cached = cachedDiagsByUri.get(fileUri);
+      if (cached != null) {
+        return cached;
+      }
+    }
+
     clearHierarchy(fileUri);
     classScopesByUri.remove(fileUri);
     scopedMembersByUri.remove(fileUri);
@@ -185,6 +203,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
     // Save ctx after successful/attempted parse (best-effort for resolveSymbol/completions)
     ctxByUri.put(fileUri, fileCtx);
+    cachedDiagsByUri.put(fileUri, List.copyOf(diags));
     return diags;
   }
 
@@ -467,6 +486,8 @@ public final class GroovyPlugin implements JvmLangPlugin {
   public void forget(String fileUri) {
     ctxByUri.remove(fileUri);
     contentByUri.remove(fileUri);
+    structuralHashByUri.remove(fileUri);
+    cachedDiagsByUri.remove(fileUri);
     clearHierarchy(fileUri);
     classScopesByUri.remove(fileUri);
     scopedMembersByUri.remove(fileUri);

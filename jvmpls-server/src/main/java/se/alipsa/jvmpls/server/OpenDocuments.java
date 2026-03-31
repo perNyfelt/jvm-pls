@@ -6,7 +6,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
+
 import se.alipsa.jvmpls.core.CoreFacade;
+import se.alipsa.jvmpls.core.DocumentStore;
 
 final class OpenDocuments {
 
@@ -21,6 +25,39 @@ final class OpenDocuments {
   void change(String uri, int version, String text) {
     documentsByUri.computeIfPresent(
         uri, (ignored, existing) -> new DocumentState(uri, existing.languageId(), version, text));
+  }
+
+  /**
+   * Applies a sequence of incremental (ranged or full) content changes to the document and updates
+   * its version. Each change is applied in order; ranged changes are relative to the state after
+   * the previous change in the same notification. Returns the final full text.
+   *
+   * @throws IllegalStateException if the document is not currently open
+   */
+  String applyIncrementalChanges(
+      String uri, int version, List<TextDocumentContentChangeEvent> changes) {
+    DocumentState state = documentsByUri.get(uri);
+    if (state == null) {
+      throw new IllegalStateException("No open document for URI: " + uri);
+    }
+    String text = state.text();
+    for (TextDocumentContentChangeEvent change : changes) {
+      Range range = change.getRange();
+      if (range == null) {
+        // Full content replacement (no range means the whole document)
+        text = change.getText();
+      } else {
+        int startOffset =
+            DocumentStore.toOffset(
+                text, range.getStart().getLine(), range.getStart().getCharacter());
+        int endOffset =
+            DocumentStore.toOffset(text, range.getEnd().getLine(), range.getEnd().getCharacter());
+        text = text.substring(0, startOffset) + change.getText() + text.substring(endOffset);
+      }
+    }
+    String finalText = text;
+    documentsByUri.put(uri, new DocumentState(uri, state.languageId(), version, finalText));
+    return finalText;
   }
 
   void close(String uri) {

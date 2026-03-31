@@ -118,7 +118,7 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
     ServerCapabilities capabilities = new ServerCapabilities();
     TextDocumentSyncOptions syncOptions = new TextDocumentSyncOptions();
     syncOptions.setOpenClose(true);
-    syncOptions.setChange(TextDocumentSyncKind.Full);
+    syncOptions.setChange(TextDocumentSyncKind.Incremental);
     capabilities.setTextDocumentSync(syncOptions);
 
     CompletionOptions completionOptions = new CompletionOptions();
