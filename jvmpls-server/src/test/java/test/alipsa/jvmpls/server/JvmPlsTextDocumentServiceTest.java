@@ -15,9 +15,13 @@ import java.util.logging.Level;
 
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.DeclarationParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DidSaveTextDocumentParams;
+import org.eclipse.lsp4j.DocumentHighlight;
+import org.eclipse.lsp4j.DocumentHighlightParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.Location;
@@ -72,6 +76,18 @@ class JvmPlsTextDocumentServiceTest {
   }
 
   @Test
+  void didSave_reanalyzesOpenDocument() {
+    FakeCoreFacade core = new FakeCoreFacade();
+    JvmPlsTextDocumentService service = new JvmPlsTextDocumentService(core);
+
+    service.didOpen(
+        new DidOpenTextDocumentParams(new TextDocumentItem(TEST_URI, "java", 1, "class Test {}")));
+    service.didSave(new DidSaveTextDocumentParams(new TextDocumentIdentifier(TEST_URI)));
+
+    assertEquals(1, core.analyzeInvocations.get());
+  }
+
+  @Test
   void completion_returnsEmptyListWhenCoreThrows() throws Exception {
     FakeCoreFacade core = new FakeCoreFacade();
     core.completionFailure = new IllegalStateException("boom");
@@ -88,6 +104,29 @@ class JvmPlsTextDocumentServiceTest {
       assertTrue(result.getLeft().isEmpty(), "completion fallback should be empty");
       assertTrue(logs.contains(Level.SEVERE, "Completion request failed"));
     }
+  }
+
+  @Test
+  void declaration_mapsOptionalLocationToSingletonList() throws Exception {
+    FakeCoreFacade core = new FakeCoreFacade();
+    core.definitionResult =
+        Optional.of(
+            new se.alipsa.jvmpls.core.model.Location(
+                TEST_URI,
+                new Range(
+                    new se.alipsa.jvmpls.core.model.Position(2, 1),
+                    new se.alipsa.jvmpls.core.model.Position(2, 4))));
+    JvmPlsTextDocumentService service = new JvmPlsTextDocumentService(core);
+
+    Either<List<? extends Location>, List<? extends org.eclipse.lsp4j.LocationLink>> result =
+        service
+            .declaration(
+                new DeclarationParams(new TextDocumentIdentifier(TEST_URI), new Position(0, 0)))
+            .get(5, TimeUnit.SECONDS);
+
+    assertTrue(result.isLeft());
+    assertEquals(1, result.getLeft().size());
+    assertEquals(TEST_URI, result.getLeft().getFirst().getUri());
   }
 
   @Test
@@ -137,6 +176,34 @@ class JvmPlsTextDocumentServiceTest {
   }
 
   @Test
+  void documentHighlight_filtersReferencesToCurrentFile() throws Exception {
+    FakeCoreFacade core = new FakeCoreFacade();
+    core.referencesResult =
+        List.of(
+            new se.alipsa.jvmpls.core.model.Location(
+                TEST_URI,
+                new Range(
+                    new se.alipsa.jvmpls.core.model.Position(1, 0),
+                    new se.alipsa.jvmpls.core.model.Position(1, 4))),
+            new se.alipsa.jvmpls.core.model.Location(
+                "file:///Other.java",
+                new Range(
+                    new se.alipsa.jvmpls.core.model.Position(0, 0),
+                    new se.alipsa.jvmpls.core.model.Position(0, 4))));
+    JvmPlsTextDocumentService service = new JvmPlsTextDocumentService(core);
+
+    List<? extends DocumentHighlight> highlights =
+        service
+            .documentHighlight(
+                new DocumentHighlightParams(
+                    new TextDocumentIdentifier(TEST_URI), new Position(0, 0)))
+            .get(5, TimeUnit.SECONDS);
+
+    assertEquals(1, highlights.size());
+    assertEquals(1, highlights.getFirst().getRange().getStart().getLine());
+  }
+
+  @Test
   void formatting_usesInjectedFormatter() throws Exception {
     FakeCoreFacade core = new FakeCoreFacade();
     DocumentFormatter formatter =
@@ -165,9 +232,11 @@ class JvmPlsTextDocumentServiceTest {
 
   private static final class FakeCoreFacade implements CoreFacade {
 
+    private final AtomicInteger analyzeInvocations = new AtomicInteger();
     private final AtomicInteger changeInvocations = new AtomicInteger();
     private RuntimeException completionFailure;
     private Optional<se.alipsa.jvmpls.core.model.Location> definitionResult = Optional.empty();
+    private List<se.alipsa.jvmpls.core.model.Location> referencesResult = List.of();
 
     @Override
     public List<Diagnostic> openFile(String uri, String text) {
@@ -185,6 +254,7 @@ class JvmPlsTextDocumentServiceTest {
 
     @Override
     public List<Diagnostic> analyze(String uri) {
+      analyzeInvocations.incrementAndGet();
       return List.of();
     }
 
@@ -217,7 +287,7 @@ class JvmPlsTextDocumentServiceTest {
     @Override
     public List<se.alipsa.jvmpls.core.model.Location> references(
         String uri, se.alipsa.jvmpls.core.model.Position position, boolean includeDeclaration) {
-      return List.of();
+      return referencesResult;
     }
 
     @Override
