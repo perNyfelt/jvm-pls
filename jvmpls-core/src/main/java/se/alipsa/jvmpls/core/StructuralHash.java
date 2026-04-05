@@ -43,10 +43,11 @@ public final class StructuralHash {
               + "(?:\\s*throws\\s+[\\w.,\\s]+)?" // optional throws
               + "\\s*[{;]");
 
-  // Matches field declarations (not inside method bodies — heuristic: no leading brace depth)
+  // Matches field declarations (not inside method bodies — heuristic: no leading brace depth).
+  // The modifier group is optional to also catch Groovy-style unmodified fields like "String name".
   private static final Pattern FIELD_DECL =
       Pattern.compile(
-          "(?m)^\\s*(?:(?:public|protected|private|static|final|transient|volatile)\\s+)+"
+          "(?m)^\\s*(?:(?:public|protected|private|static|final|transient|volatile)\\s+)*"
               + "[\\w.<>\\[\\],?]+\\s+\\w+(?:\\s*=[^;]*)?;");
 
   // Matches annotation usage on declarations

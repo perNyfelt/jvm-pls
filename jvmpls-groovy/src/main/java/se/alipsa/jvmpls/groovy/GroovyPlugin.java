@@ -167,6 +167,7 @@ public final class GroovyPlugin implements JvmLangPlugin {
       }
       analyzeDynamicFeatures(fileUri, classes.values(), modules, reporter, fileCtx);
       reportReferences(fileUri, classes.values(), modules, reporter, fileCtx);
+      reportFileDependencies(fileUri, classes.values(), reporter, fileCtx);
       runSemanticDiagnostics(fileUri, classes.values(), diags, fileCtx);
 
     } catch (MultipleCompilationErrorsException mce) {
@@ -1120,6 +1121,43 @@ public final class GroovyPlugin implements JvmLangPlugin {
 
   private record GroovyCallSite(
       List<SymbolInfo> candidates, int activeSignature, int activeParameter) {}
+
+  /**
+   * Report file-level dependencies by resolving imports and supertypes to workspace file URIs. This
+   * populates the DependencyGraph so incremental invalidation works correctly.
+   */
+  private void reportFileDependencies(
+      String fileUri, Collection<ClassNode> classes, SymbolReporter reporter, FileCtx ctx) {
+    CoreQuery core = coreQuery;
+    if (core == null) {
+      return;
+    }
+    Set<String> reported = new HashSet<>();
+    // Dependencies from single imports
+    for (String importedFqn : ctx.singleImports) {
+      reportDependencyForFqn(importedFqn, fileUri, reporter, core, reported);
+    }
+    // Dependencies from extends/implements
+    for (ClassNode cn : classes) {
+      ClassNode superClass = cn.getSuperClass();
+      if (superClass != null && !"java.lang.Object".equals(superClass.getName())) {
+        reportDependencyForFqn(superClass.getName(), fileUri, reporter, core, reported);
+      }
+      for (ClassNode iface : cn.getInterfaces()) {
+        reportDependencyForFqn(iface.getName(), fileUri, reporter, core, reported);
+      }
+    }
+  }
+
+  private static void reportDependencyForFqn(
+      String fqn, String fileUri, SymbolReporter reporter, CoreQuery core, Set<String> reported) {
+    core.findByFqn(fqn)
+        .map(SymbolInfo::getLocation)
+        .map(Location::getUri)
+        .filter(depUri -> !depUri.equals(fileUri))
+        .filter(reported::add)
+        .ifPresent(reporter::reportDependency);
+  }
 
   private void reportReferences(
       String fileUri,

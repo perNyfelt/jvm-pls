@@ -65,3 +65,6 @@ All in `se.alipsa.jvmpls.core.model`: `SymbolInfo` (with Kind enum), `Completion
 - Integration tests in `jvmpls-it` (`*IT.java` suffix, Failsafe)
 - Test package prefix: `test.alipsa.jvmpls.*` (not `se.alipsa.jvmpls.*`)
 - Tests use temp directories for file-based scenarios and inline source strings
+
+### Use of skills and plugins
+- Use skills and plugins inline; NEVER user subagents as this will cause the quota to expire after a very short time.

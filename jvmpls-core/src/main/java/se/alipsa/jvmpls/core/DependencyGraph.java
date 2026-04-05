@@ -11,6 +11,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * File-level dependency graph storing normalized URI-to-URI edges. Maintains both forward edges
  * (file A depends on file B) and reverse edges (file B is depended on by file A) for cheap
  * invalidation queries.
+ *
+ * <p>All public methods are synchronized to guarantee consistent reads across forward and reverse
+ * maps.
  */
 public final class DependencyGraph {
 
@@ -59,7 +62,7 @@ public final class DependencyGraph {
    * @param uri the target URI
    * @return unmodifiable snapshot of direct dependents
    */
-  public Set<String> directDependentsOf(String uri) {
+  public synchronized Set<String> directDependentsOf(String uri) {
     Set<String> deps = reverse.get(uri);
     if (deps == null || deps.isEmpty()) {
       return Set.of();
@@ -73,7 +76,7 @@ public final class DependencyGraph {
    * @param uri the target URI
    * @return unmodifiable set of all transitive dependents (does not include uri itself)
    */
-  public Set<String> transitiveDependentsOf(String uri) {
+  public synchronized Set<String> transitiveDependentsOf(String uri) {
     Set<String> result = new HashSet<>();
     ArrayDeque<String> queue = new ArrayDeque<>();
     queue.add(uri);
@@ -101,7 +104,7 @@ public final class DependencyGraph {
    * @param fromUri the source file URI
    * @return unmodifiable snapshot of dependencies, or empty set if none
    */
-  public Set<String> dependsOn(String fromUri) {
+  public synchronized Set<String> dependsOn(String fromUri) {
     Set<String> deps = forward.get(fromUri);
     if (deps == null || deps.isEmpty()) {
       return Set.of();
@@ -145,7 +148,7 @@ public final class DependencyGraph {
   }
 
   /** Clear all edges. */
-  public void clear() {
+  public synchronized void clear() {
     forward.clear();
     reverse.clear();
   }

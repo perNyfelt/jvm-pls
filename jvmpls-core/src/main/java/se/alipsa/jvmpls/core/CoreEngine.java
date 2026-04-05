@@ -34,6 +34,9 @@ public final class CoreEngine implements CoreFacade {
   /** URIs currently being reindexed, used for coalescing to prevent overlapping work. */
   private final Set<String> reindexingUris = ConcurrentHashMap.newKeySet();
 
+  /** Maximum transitive propagation depth to prevent runaway cascades. */
+  private static final int MAX_PROPAGATION_DEPTH = 10;
+
   /** Bundles the reporter with the set of dependencies it collects during indexing. */
   private record IndexingContext(SymbolReporter reporter, Set<String> dependencies) {}
 
@@ -54,13 +57,13 @@ public final class CoreEngine implements CoreFacade {
   @Override
   public List<Diagnostic> openFile(String uri, String text) {
     docs.put(uri, text);
-    return reindex(uri, text);
+    return reindex(uri, text, 0);
   }
 
   @Override
   public List<Diagnostic> changeFile(String uri, String text) {
     docs.put(uri, text);
-    return reindex(uri, text);
+    return reindex(uri, text, 0);
   }
 
   @Override
@@ -83,7 +86,7 @@ public final class CoreEngine implements CoreFacade {
   public List<Diagnostic> analyze(String uri) {
     String text = docs.get(uri);
     if (text == null) return List.of();
-    return reindex(uri, text);
+    return reindex(uri, text, 0);
   }
 
   @Override
@@ -371,7 +374,7 @@ public final class CoreEngine implements CoreFacade {
 
   // --- internals --------------------------------------------------------------------------------
 
-  private List<Diagnostic> reindex(String uri, String text) {
+  private List<Diagnostic> reindex(String uri, String text, int depth) {
     var pluginOpt = plugins.forFile(uri, () -> TokenUtil.preview(text));
     if (pluginOpt.isEmpty()) {
       // Clear any stale symbols for this file and report info diagnostic
@@ -412,32 +415,42 @@ public final class CoreEngine implements CoreFacade {
     ApiFingerprint newFingerprint = ApiFingerprint.compute(uri, index);
     ApiFingerprint oldFingerprint = fingerprintByUri.put(uri, newFingerprint);
 
-    if (oldFingerprint != null && !oldFingerprint.equals(newFingerprint)) {
-      // API changed: schedule transitive dependents
-      Set<String> dependents = graph.transitiveDependentsOf(uri);
-      if (!dependents.isEmpty()) {
-        LOG.fine(
-            () ->
-                "API change detected for "
-                    + uri
-                    + ", "
-                    + dependents.size()
-                    + " transitive dependents need reindex");
-        scheduleReindexDependents(dependents);
+    if (depth < MAX_PROPAGATION_DEPTH && oldFingerprint != null) {
+      if (!oldFingerprint.equals(newFingerprint)) {
+        // API changed: schedule transitive dependents
+        Set<String> dependents = graph.transitiveDependentsOf(uri);
+        if (!dependents.isEmpty()) {
+          int nextDepth = depth + 1;
+          LOG.fine(
+              () ->
+                  "API change detected for "
+                      + uri
+                      + ", "
+                      + dependents.size()
+                      + " transitive dependents need reindex (depth "
+                      + nextDepth
+                      + ")");
+          scheduleReindexDependents(dependents, nextDepth);
+        }
+      } else {
+        // Body-only change: schedule direct dependents only
+        Set<String> dependents = graph.directDependentsOf(uri);
+        if (!dependents.isEmpty()) {
+          int nextDepth = depth + 1;
+          LOG.fine(
+              () ->
+                  "Body-only change for "
+                      + uri
+                      + ", "
+                      + dependents.size()
+                      + " direct dependents need reindex (depth "
+                      + nextDepth
+                      + ")");
+          scheduleReindexDependents(dependents, nextDepth);
+        }
       }
-    } else if (oldFingerprint != null) {
-      // Body-only change: schedule direct dependents only
-      Set<String> dependents = graph.directDependentsOf(uri);
-      if (!dependents.isEmpty()) {
-        LOG.fine(
-            () ->
-                "Body-only change for "
-                    + uri
-                    + ", "
-                    + dependents.size()
-                    + " direct dependents need reindex");
-        scheduleReindexDependents(dependents);
-      }
+    } else if (depth >= MAX_PROPAGATION_DEPTH && oldFingerprint != null) {
+      LOG.warning(() -> "Propagation depth limit reached for " + uri + ", stopping cascade");
     }
     // oldFingerprint == null means first index — no dependents to propagate to
 
@@ -446,12 +459,12 @@ public final class CoreEngine implements CoreFacade {
 
   /**
    * Schedule reindexing of dependent files through the executor. Deduplicates by URI so the same
-   * file is not reindexed concurrently.
+   * file is not reindexed concurrently. Reads text from docs at execution time to avoid stale
+   * captures.
    */
-  private void scheduleReindexDependents(Collection<String> dependentUris) {
+  private void scheduleReindexDependents(Collection<String> dependentUris, int depth) {
     for (String depUri : dependentUris) {
-      String text = docs.get(depUri);
-      if (text == null) {
+      if (docs.get(depUri) == null) {
         continue; // not open, skip
       }
       if (!reindexingUris.add(depUri)) {
@@ -460,7 +473,10 @@ public final class CoreEngine implements CoreFacade {
       executor.execute(
           () -> {
             try {
-              reindex(depUri, text);
+              String currentText = docs.get(depUri);
+              if (currentText != null) {
+                reindex(depUri, currentText, depth);
+              }
             } finally {
               reindexingUris.remove(depUri);
             }

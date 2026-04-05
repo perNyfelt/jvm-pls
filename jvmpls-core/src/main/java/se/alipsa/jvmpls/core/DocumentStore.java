@@ -30,15 +30,19 @@ public final class DocumentStore {
    */
   public String applyEdit(
       String uri, int startLine, int startChar, int endLine, int endChar, String newText) {
-    String text = byUri.get(uri);
-    if (text == null) {
-      throw new IllegalArgumentException("No stored text for URI: " + uri);
-    }
-    int startOffset = toOffset(text, startLine, startChar);
-    int endOffset = toOffset(text, endLine, endChar);
-    String updated = text.substring(0, startOffset) + newText + text.substring(endOffset);
-    byUri.put(uri, updated);
-    return updated;
+    String[] result = new String[1];
+    byUri.compute(
+        uri,
+        (key, text) -> {
+          if (text == null) {
+            throw new IllegalArgumentException("No stored text for URI: " + key);
+          }
+          int startOffset = toOffset(text, startLine, startChar);
+          int endOffset = toOffset(text, endLine, endChar);
+          result[0] = text.substring(0, startOffset) + newText + text.substring(endOffset);
+          return result[0];
+        });
+    return result[0];
   }
 
   /**

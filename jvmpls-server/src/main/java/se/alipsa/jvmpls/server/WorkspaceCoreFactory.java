@@ -13,8 +13,17 @@ final class WorkspaceCoreFactory {
       List<String> classpathEntries,
       Path targetJdkHome,
       DiagnosticsPublisher diagnosticsPublisher) {
+    return create(classpathEntries, targetJdkHome, null, diagnosticsPublisher);
+  }
+
+  CoreInstance create(
+      List<String> classpathEntries,
+      Path targetJdkHome,
+      Path workspaceRoot,
+      DiagnosticsPublisher diagnosticsPublisher) {
     CoreServer coreServer =
-        CoreServer.createDefault(diagnosticsPublisher, classpathEntries, targetJdkHome);
+        CoreServer.createDefault(
+            diagnosticsPublisher, classpathEntries, targetJdkHome, workspaceRoot);
     return new CoreInstance(coreServer, coreServer);
   }
 

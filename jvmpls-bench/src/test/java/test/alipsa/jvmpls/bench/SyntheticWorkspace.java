@@ -23,29 +23,21 @@ final class SyntheticWorkspace {
     Random rng = new Random(42); // deterministic seed for reproducible benchmarks
     List<SourceFile> files = new ArrayList<>();
     List<String> javaClassNames = new ArrayList<>();
-    List<String> groovyClassNames = new ArrayList<>();
 
+    // First pass: determine language assignment and collect Java class names for extends targets
+    boolean[] isGroovyFlags = new boolean[fileCount];
     for (int i = 0; i < fileCount; i++) {
-      boolean isGroovy = rng.nextDouble() < 0.10;
-      String className = (isGroovy ? "GClass" : "JClass") + i;
+      isGroovyFlags[i] = rng.nextDouble() < 0.10;
+      String className = (isGroovyFlags[i] ? "GClass" : "JClass") + i;
       String pkg = "bench.pkg" + (i % 10);
-
-      if (isGroovy) {
-        groovyClassNames.add(pkg + "." + className);
-      } else {
+      if (!isGroovyFlags[i]) {
         javaClassNames.add(pkg + "." + className);
       }
     }
 
-    int idx = 0;
+    // Second pass: generate source files
     for (int i = 0; i < fileCount; i++) {
-      boolean isGroovy =
-          i < groovyClassNames.size() + javaClassNames.size()
-              && idx < groovyClassNames.size()
-              && groovyClassNames.get(idx).contains("GClass" + i);
-
-      // Re-derive from the pattern
-      isGroovy = (new Random(42 + i).nextDouble() < 0.10);
+      boolean isGroovy = isGroovyFlags[i];
       String className = (isGroovy ? "GClass" : "JClass") + i;
       String pkg = "bench.pkg" + (i % 10);
       String fqn = pkg + "." + className;

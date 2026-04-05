@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -24,6 +25,7 @@ final class ClasspathCache {
   private static final String CACHE_VERSION = "1";
   private static final String CATALOG_FILE = "scan-catalog.dat";
   private static final String VERSION_FILE = "cache-version.txt";
+  private static final String FINGERPRINT_FILE = "classpath-fingerprint.txt";
 
   private final Path cacheDir;
 
@@ -57,6 +59,27 @@ final class ClasspathCache {
       return null;
     }
 
+    // Validate classpath fingerprint (JAR paths + modification times)
+    String currentFingerprint = computeClasspathFingerprint(classpathEntries);
+    Path fingerprintFile = cacheDir.resolve(FINGERPRINT_FILE);
+    try {
+      if (!Files.exists(fingerprintFile)) {
+        LOG.info("No classpath fingerprint file, invalidating cache");
+        delete();
+        return null;
+      }
+      String storedFingerprint = Files.readString(fingerprintFile, StandardCharsets.UTF_8).trim();
+      if (!currentFingerprint.equals(storedFingerprint)) {
+        LOG.info("Classpath fingerprint changed (JAR paths or modification times differ)");
+        delete();
+        return null;
+      }
+    } catch (IOException e) {
+      LOG.log(Level.WARNING, "Failed to read classpath fingerprint", e);
+      delete();
+      return null;
+    }
+
     try {
       ScannedTypeCatalog catalog = readCatalog(catalogFile);
       if (catalog == null || catalog.isEmpty()) {
@@ -72,11 +95,15 @@ final class ClasspathCache {
     }
   }
 
-  /** Save the catalog to disk. */
-  void save(ScannedTypeCatalog catalog) {
+  /** Save the catalog to disk along with a classpath fingerprint for staleness detection. */
+  void save(ScannedTypeCatalog catalog, List<String> classpathEntries) {
     try {
       Files.createDirectories(cacheDir);
       Files.writeString(cacheDir.resolve(VERSION_FILE), CACHE_VERSION, StandardCharsets.UTF_8);
+      Files.writeString(
+          cacheDir.resolve(FINGERPRINT_FILE),
+          computeClasspathFingerprint(classpathEntries),
+          StandardCharsets.UTF_8);
       writeCatalog(cacheDir.resolve(CATALOG_FILE), catalog);
       LOG.info("Saved classpath cache to " + cacheDir);
     } catch (IOException e) {
@@ -87,14 +114,34 @@ final class ClasspathCache {
   /** Delete the cache directory contents. */
   void delete() {
     try {
-      Path versionFile = cacheDir.resolve(VERSION_FILE);
-      Path catalogFile = cacheDir.resolve(CATALOG_FILE);
-      Files.deleteIfExists(catalogFile);
-      Files.deleteIfExists(versionFile);
+      Files.deleteIfExists(cacheDir.resolve(CATALOG_FILE));
+      Files.deleteIfExists(cacheDir.resolve(FINGERPRINT_FILE));
+      Files.deleteIfExists(cacheDir.resolve(VERSION_FILE));
       LOG.info("Deleted stale classpath cache at " + cacheDir);
     } catch (IOException e) {
       LOG.log(Level.WARNING, "Failed to delete classpath cache", e);
     }
+  }
+
+  /**
+   * Compute a fingerprint of the classpath entries: each entry's path and last-modified time. If a
+   * JAR is added, removed, or updated, the fingerprint changes.
+   */
+  private static String computeClasspathFingerprint(List<String> classpathEntries) {
+    StringJoiner joiner = new StringJoiner("\n");
+    for (String entry : classpathEntries) {
+      Path path = Path.of(entry);
+      long lastModified = 0;
+      try {
+        if (Files.exists(path)) {
+          lastModified = Files.getLastModifiedTime(path).toMillis();
+        }
+      } catch (IOException ignored) {
+        // treat as 0
+      }
+      joiner.add(entry + ":" + lastModified);
+    }
+    return joiner.toString();
   }
 
   // ---------- serialization ----------

@@ -160,7 +160,10 @@ final class WorkspaceManager {
   private void installBuildModel(BuildModel buildModel, String reason) {
     WorkspaceCoreFactory.CoreInstance nextCore =
         coreFactory.create(
-            buildModel.classpathEntries(), buildModel.targetJdkHome(), diagnosticsPublisher);
+            buildModel.classpathEntries(),
+            buildModel.targetJdkHome(),
+            buildModel.projectRoot(),
+            diagnosticsPublisher);
     boolean installed = false;
     try {
       openDocuments.replayInto(nextCore.core());

@@ -43,7 +43,7 @@ public final class ClasspathSymbolProviderFactory implements SymbolProviderFacto
 
       // Save to cache for next startup
       if (cache != null && !catalog.isEmpty()) {
-        cache.save(catalog);
+        cache.save(catalog, context.classpathEntries());
       }
     }
 
