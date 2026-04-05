@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -20,15 +19,10 @@ import se.alipsa.jvmpls.core.PluginEnvironment;
 import se.alipsa.jvmpls.core.PluginRegistry;
 import se.alipsa.jvmpls.core.SymbolIndex;
 import se.alipsa.jvmpls.core.SymbolReporter;
-import se.alipsa.jvmpls.core.model.CodeActionInfo;
-import se.alipsa.jvmpls.core.model.CompletionItem;
 import se.alipsa.jvmpls.core.model.Diagnostic;
-import se.alipsa.jvmpls.core.model.HoverInfo;
 import se.alipsa.jvmpls.core.model.Location;
 import se.alipsa.jvmpls.core.model.Position;
 import se.alipsa.jvmpls.core.model.Range;
-import se.alipsa.jvmpls.core.model.SignatureHelpInfo;
-import se.alipsa.jvmpls.core.model.SymbolInfo;
 
 class CoreEngineInvalidationTest {
 
@@ -105,7 +99,8 @@ class CoreEngineInvalidationTest {
         } else if (line.startsWith("method:") && owner != null) {
           String signature = line.substring("method:".length()).trim();
           int open = signature.indexOf('(');
-          reporter.reportMethod(owner, signature.substring(0, open), signature.substring(open), location(fileUri));
+          reporter.reportMethod(
+              owner, signature.substring(0, open), signature.substring(open), location(fileUri));
         } else if (line.startsWith("depends:")) {
           reporter.reportDependency(line.substring("depends:".length()).trim());
         }
@@ -122,7 +117,8 @@ class CoreEngineInvalidationTest {
     }
   }
 
-  private record TestPluginEnvironment(CoreQuery core, Executor executor) implements PluginEnvironment {
+  private record TestPluginEnvironment(CoreQuery core, Executor executor)
+      implements PluginEnvironment {
     @Override
     public List<String> classpath() {
       return List.of();
