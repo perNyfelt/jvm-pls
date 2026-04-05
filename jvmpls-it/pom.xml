@@ -8,6 +8,10 @@
   </parent>
 
   <artifactId>jvmpls-it</artifactId>
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+    <gpg.skip>true</gpg.skip>
+  </properties>
   <dependencies>
     <dependency>
       <groupId>se.alipsa.jvmpls</groupId>

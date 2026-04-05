@@ -1,5 +1,69 @@
 # jvm-pls - JVM Polyglot Language Server
 
+`jvm-pls` is a standalone Language Server Protocol server and embeddable JVM analysis stack for mixed Java and Groovy workspaces.
+
+## Release Artifacts
+
+The project publishes these Maven Central artifacts:
+
+- `jvmpls-core`
+- `jvmpls-classpath`
+- `jvmpls-build`
+- `jvmpls-build-maven`
+- `jvmpls-build-gradle`
+- `jvmpls-java`
+- `jvmpls-groovy`
+- `jvmpls-server`
+
+The release entry point for end users is the shaded standalone server JAR produced by `jvmpls-server`:
+
+- `jvmpls-server-<version>.jar`: standard embeddable server artifact
+- `jvmpls-server-<version>-standalone.jar`: standalone executable LSP server
+
+Internal verification modules are kept in the repository but are not published:
+
+- `jvmpls-it`
+- `jvmpls-bench`
+
+## Build
+
+Requires:
+
+- Java 21+
+- Maven 3.9.9+
+
+Build everything:
+
+```bash
+mvn -q -DskipTests install
+mvn -q test
+```
+
+Build the standalone server JAR only:
+
+```bash
+mvn -pl jvmpls-server -am package -DskipTests
+```
+
+## Run
+
+Launch the standalone server over stdio:
+
+```bash
+java -jar jvmpls-server/target/jvmpls-server-1.0.0-SNAPSHOT-standalone.jar --stdio
+```
+
+Other supported flags:
+
+```bash
+java -jar jvmpls-server/target/jvmpls-server-1.0.0-SNAPSHOT-standalone.jar --version
+java -jar jvmpls-server/target/jvmpls-server-1.0.0-SNAPSHOT-standalone.jar --help
+```
+
+## Embedding
+
+Use `jvmpls-server` when you need an actual LSP server process. Use `jvmpls-core` and the language/plugin modules when embedding `jvm-pls` programmatically.
+
 The JVM ecosystem is inherently polyglot these days, 
 and the cross-language interoperability (Java ↔ Groovy ↔ Kotlin ↔ Scala ↔ Clojure etc.) is crucial in real projects. 
 Current language servers typically focus on one language at a time and don’t handle multi-language projects 
