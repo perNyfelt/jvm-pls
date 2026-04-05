@@ -9,6 +9,11 @@
   <description>JVM polyglot language server for Java and Groovy.</description>
   <url>https://github.com/perNyfelt/jvm-pls</url>
 
+  <organization>
+    <name>Alipsa</name>
+    <url>https://alipsa.se</url>
+  </organization>
+
   <licenses>
     <license>
       <name>Apache License, Version 2.0</name>
@@ -16,11 +21,6 @@
       <distribution>repo</distribution>
     </license>
   </licenses>
-
-  <organization>
-    <name>Alipsa</name>
-    <url>https://alipsa.se</url>
-  </organization>
 
   <developers>
     <developer>
@@ -31,13 +31,6 @@
       <organizationUrl>https://alipsa.se</organizationUrl>
     </developer>
   </developers>
-
-  <scm>
-    <connection>scm:git:git://github.com/perNyfelt/jvm-pls.git</connection>
-    <developerConnection>scm:git:ssh://git@github.com/perNyfelt/jvm-pls.git</developerConnection>
-    <url>https://github.com/perNyfelt/jvm-pls</url>
-    <tag>HEAD</tag>
-  </scm>
 
   <modules>
     <module>jvmpls-core</module>
@@ -51,6 +44,13 @@
     <module>jvmpls-it</module>
     <module>jvmpls-bench</module>
   </modules>
+
+  <scm>
+    <connection>scm:git:git://github.com/perNyfelt/jvm-pls.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/perNyfelt/jvm-pls.git</developerConnection>
+    <tag>HEAD</tag>
+    <url>https://github.com/perNyfelt/jvm-pls</url>
+  </scm>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -293,10 +293,10 @@
             <executions>
               <execution>
                 <id>sign-artifacts</id>
-                <phase>verify</phase>
                 <goals>
                   <goal>sign</goal>
                 </goals>
+                <phase>verify</phase>
               </execution>
             </executions>
           </plugin>

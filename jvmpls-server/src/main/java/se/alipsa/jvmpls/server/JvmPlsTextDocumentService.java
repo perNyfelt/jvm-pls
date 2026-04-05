@@ -109,7 +109,18 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
 
   @Override
   public void didSave(DidSaveTextDocumentParams params) {
-    // no-op
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Ignoring textDocument/didSave after shutdown");
+      return;
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Ignoring textDocument/didSave before initialization");
+      return;
+    }
+    if (params == null || params.getTextDocument() == null) {
+      return;
+    }
+    core.analyze(params.getTextDocument().getUri());
   }
 
   // -------------------------------------------------------------------------
@@ -140,6 +151,39 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
           } catch (RuntimeException e) {
             LOG.log(Level.SEVERE, "Completion request failed", e);
             return Either.<List<CompletionItem>, CompletionList>forLeft(Collections.emptyList());
+          }
+        });
+  }
+
+  @Override
+  public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      declaration(DeclarationParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/declaration after shutdown");
+      return rejectedAfterShutdown("textDocument/declaration");
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/declaration before initialization");
+      return rejectedUnavailable("textDocument/declaration");
+    }
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            String uri = params.getTextDocument().getUri();
+            se.alipsa.jvmpls.core.model.Position corePos =
+                LspTypeConverter.toCore(params.getPosition());
+            Optional<se.alipsa.jvmpls.core.model.Location> coreLocation =
+                core.definition(uri, corePos);
+            List<Location> locations =
+                coreLocation
+                    .map(loc -> List.of(LspTypeConverter.toLsp(loc)))
+                    .orElse(Collections.emptyList());
+            return Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(
+                locations);
+          } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Declaration request failed", e);
+            return Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(
+                Collections.emptyList());
           }
         });
   }
@@ -310,6 +354,36 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
                 .toList();
           } catch (RuntimeException e) {
             LOG.log(Level.SEVERE, "References request failed", e);
+            return List.of();
+          }
+        });
+  }
+
+  @Override
+  public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(
+      DocumentHighlightParams params) {
+    if (!acceptingRequests.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/documentHighlight after shutdown");
+      return rejectedAfterShutdown("textDocument/documentHighlight");
+    }
+    if (!coreReady.getAsBoolean()) {
+      LOG.warning("Rejecting textDocument/documentHighlight before initialization");
+      return rejectedUnavailable("textDocument/documentHighlight");
+    }
+    return CompletableFuture.supplyAsync(
+        () -> {
+          try {
+            String uri = params.getTextDocument().getUri();
+            se.alipsa.jvmpls.core.model.Position corePos =
+                LspTypeConverter.toCore(params.getPosition());
+            Optional<se.alipsa.jvmpls.core.model.Location> declaration =
+                core.definition(uri, corePos);
+            return core.references(uri, corePos, true).stream()
+                .filter(location -> uri.equals(location.getUri()))
+                .map(location -> toDocumentHighlight(location, declaration))
+                .toList();
+          } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Document highlight request failed", e);
             return List.of();
           }
         });
@@ -566,5 +640,17 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
       value = value.substring(1, value.length() - 1);
     }
     return value.isBlank() ? null : value;
+  }
+
+  private static DocumentHighlight toDocumentHighlight(
+      se.alipsa.jvmpls.core.model.Location location,
+      Optional<se.alipsa.jvmpls.core.model.Location> declaration) {
+    DocumentHighlight highlight = new DocumentHighlight();
+    highlight.setRange(LspTypeConverter.toLsp(location).getRange());
+    highlight.setKind(
+        declaration.filter(location::equals).isPresent()
+            ? DocumentHighlightKind.Write
+            : DocumentHighlightKind.Text);
+    return highlight;
   }
 }

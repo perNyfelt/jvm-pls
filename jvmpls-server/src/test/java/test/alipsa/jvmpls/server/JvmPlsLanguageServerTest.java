@@ -130,7 +130,15 @@ class JvmPlsLanguageServerTest {
     assertTrue(
         completionProvider.getTriggerCharacters().contains("."),
         "trigger characters should include '.'");
+    assertTrue(
+        completionProvider.getTriggerCharacters().contains("@"),
+        "trigger characters should include '@'");
+    assertFalse(
+        completionProvider.getTriggerCharacters().contains(":"),
+        "trigger characters should not include ':'");
+    assertNotNull(result.getCapabilities().getDeclarationProvider());
     assertNotNull(result.getCapabilities().getHoverProvider());
+    assertNotNull(result.getCapabilities().getDocumentHighlightProvider());
     assertNotNull(result.getCapabilities().getReferencesProvider());
     assertNotNull(result.getCapabilities().getDocumentSymbolProvider());
     assertNotNull(result.getCapabilities().getWorkspaceSymbolProvider());
