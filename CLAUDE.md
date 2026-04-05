@@ -67,4 +67,4 @@ All in `se.alipsa.jvmpls.core.model`: `SymbolInfo` (with Kind enum), `Completion
 - Tests use temp directories for file-based scenarios and inline source strings
 
 ### Use of skills and plugins
-- Use skills and plugins inline; NEVER user subagents as this will cause the quota to expire after a very short time.
+- Use skills and plugins inline; NEVER use subagents as this will cause the quota to expire after a very short time.

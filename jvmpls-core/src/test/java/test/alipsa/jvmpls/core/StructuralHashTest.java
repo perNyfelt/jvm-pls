@@ -132,4 +132,29 @@ class StructuralHashTest {
         """;
     assertNotEquals(StructuralHash.compute(source1), StructuralHash.compute(source2));
   }
+
+  @Test
+  void localVariableChangesInsideMethodDoNotAffectHash() {
+    String source1 =
+        """
+        package demo;
+        class Foo {
+          String name;
+          void run() {
+            int value = 1;
+          }
+        }
+        """;
+    String source2 =
+        """
+        package demo;
+        class Foo {
+          String name;
+          void run() {
+            int renamed = 2;
+          }
+        }
+        """;
+    assertEquals(StructuralHash.compute(source1), StructuralHash.compute(source2));
+  }
 }

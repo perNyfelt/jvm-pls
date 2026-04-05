@@ -433,21 +433,7 @@ public final class CoreEngine implements CoreFacade {
           scheduleReindexDependents(dependents, nextDepth);
         }
       } else {
-        // Body-only change: schedule direct dependents only
-        Set<String> dependents = graph.directDependentsOf(uri);
-        if (!dependents.isEmpty()) {
-          int nextDepth = depth + 1;
-          LOG.fine(
-              () ->
-                  "Body-only change for "
-                      + uri
-                      + ", "
-                      + dependents.size()
-                      + " direct dependents need reindex (depth "
-                      + nextDepth
-                      + ")");
-          scheduleReindexDependents(dependents, nextDepth);
-        }
+        LOG.fine(() -> "Body-only change for " + uri + ", skipping dependent reindex");
       }
     } else if (depth >= MAX_PROPAGATION_DEPTH && oldFingerprint != null) {
       LOG.warning(() -> "Propagation depth limit reached for " + uri + ", stopping cascade");

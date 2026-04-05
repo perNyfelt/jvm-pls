@@ -2,10 +2,10 @@ package se.alipsa.jvmpls.core;
 
 import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * File-level dependency graph storing normalized URI-to-URI edges. Maintains both forward edges
@@ -18,10 +18,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class DependencyGraph {
 
   /** Forward edges: fromUri -> set of toUris (what does this file depend on?) */
-  private final Map<String, Set<String>> forward = new ConcurrentHashMap<>();
+  private final Map<String, Set<String>> forward = new HashMap<>();
 
   /** Reverse edges: toUri -> set of fromUris (who depends on this file?) */
-  private final Map<String, Set<String>> reverse = new ConcurrentHashMap<>();
+  private final Map<String, Set<String>> reverse = new HashMap<>();
 
   /**
    * Replace all dependencies for a file atomically. Called during reindex to set the complete
@@ -47,11 +47,10 @@ public final class DependencyGraph {
 
     // Add new forward edges and corresponding reverse entries
     if (toUris != null && !toUris.isEmpty()) {
-      Set<String> newDeps = ConcurrentHashMap.newKeySet();
-      newDeps.addAll(toUris);
+      Set<String> newDeps = new HashSet<>(toUris);
       forward.put(fromUri, newDeps);
       for (String toUri : toUris) {
-        reverse.computeIfAbsent(toUri, k -> ConcurrentHashMap.newKeySet()).add(fromUri);
+        reverse.computeIfAbsent(toUri, ignored -> new HashSet<>()).add(fromUri);
       }
     }
   }

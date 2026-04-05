@@ -30,7 +30,6 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
   private final JvmPlsWorkspaceService workspaceService;
   private final ClientDiagnosticsPublisher diagnosticsPublisher;
   private final WorkspaceManager workspaceManager;
-  private final CancellationRegistry cancellationRegistry = new CancellationRegistry();
   private final IntConsumer processExit;
   private volatile boolean shutdownRequested;
   private volatile int exitCode = 1;

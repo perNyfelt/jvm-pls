@@ -2,6 +2,7 @@ package test.alipsa.jvmpls.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,6 +22,7 @@ import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
@@ -53,6 +55,20 @@ class JvmPlsTextDocumentServiceTest {
             new VersionedTextDocumentIdentifier(TEST_URI, 1), Collections.emptyList()));
 
     assertEquals(0, core.changeInvocations.get());
+  }
+
+  @Test
+  void didChange_throwsIllegalArgumentExceptionForUnknownDocument() {
+    FakeCoreFacade core = new FakeCoreFacade();
+    JvmPlsTextDocumentService service = new JvmPlsTextDocumentService(core);
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            service.didChange(
+                new DidChangeTextDocumentParams(
+                    new VersionedTextDocumentIdentifier(TEST_URI, 1),
+                    List.of(new TextDocumentContentChangeEvent("class Test {}")))));
   }
 
   @Test

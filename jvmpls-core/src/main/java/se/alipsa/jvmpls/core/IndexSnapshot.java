@@ -17,12 +17,21 @@ import se.alipsa.jvmpls.core.model.Location;
 import se.alipsa.jvmpls.core.model.Position;
 import se.alipsa.jvmpls.core.model.Range;
 import se.alipsa.jvmpls.core.model.SymbolInfo;
+import se.alipsa.jvmpls.core.types.JvmType;
+import se.alipsa.jvmpls.core.types.JvmTypes;
+import se.alipsa.jvmpls.core.types.MethodSignature;
 
 /**
  * Persistent snapshot of the symbol index for warm restart. Captures the core symbol data so that
  * startup can begin with a pre-populated index instead of from scratch. Snapshots are optional
  * accelerators — if the snapshot is stale or corrupt, it is deleted and the server falls back to
  * cold-start indexing.
+ *
+ * <p>The on-disk format persists only the legacy string signature plus core identity/location
+ * fields. On load, field {@link JvmType}s and method/constructor {@link MethodSignature}s are
+ * reconstructed from that legacy form, but richer metadata such as parameter names, throws types,
+ * synthetic origin, and inference confidence is not persisted and falls back to defaults until the
+ * file is reindexed.
  */
 public final class IndexSnapshot {
   private static final Logger LOG = Logger.getLogger(IndexSnapshot.class.getName());
@@ -107,6 +116,7 @@ public final class IndexSnapshot {
   // Symbol format (tab-separated, one per line):
   // fileUri \t languageId \t kind \t fqName \t containerFqName \t locUri \t
   // startLine \t startCol \t endLine \t endCol \t signature \t modifiers(comma-sep)
+  // Typed method/field metadata is reconstructed from signature when the snapshot is loaded.
 
   private void writeSymbols(Path file, SymbolIndex index) throws IOException {
     // Iterate all declared symbols by file
@@ -195,6 +205,8 @@ public final class IndexSnapshot {
             new Location(
                 locUri,
                 new Range(new Position(startLine, startCol), new Position(endLine, endCol)));
+        MethodSignature methodSignature = restoreMethodSignature(kind, signature, modifiers);
+        JvmType resolvedType = restoreResolvedType(kind, signature);
         SymbolInfo sym =
             new SymbolInfo(
                 languageId,
@@ -204,12 +216,29 @@ public final class IndexSnapshot {
                 loc,
                 signature,
                 Set.copyOf(modifiers),
-                List.of());
+                List.of(),
+                resolvedType,
+                methodSignature);
         index.put(fileUri, sym);
         count++;
       }
     }
     return count;
+  }
+
+  private static MethodSignature restoreMethodSignature(
+      SymbolInfo.Kind kind, String signature, Set<String> modifiers) {
+    return switch (kind) {
+      case METHOD, CONSTRUCTOR -> JvmTypes.fromLegacyMethodSignature(signature, modifiers);
+      default -> null;
+    };
+  }
+
+  private static JvmType restoreResolvedType(SymbolInfo.Kind kind, String signature) {
+    return switch (kind) {
+      case FIELD -> JvmTypes.fromSource(signature, java.util.function.Function.identity());
+      default -> null;
+    };
   }
 
   // Hierarchy format: typeFqn \t supertype1,supertype2,...

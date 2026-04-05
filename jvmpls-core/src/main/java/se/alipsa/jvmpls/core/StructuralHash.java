@@ -3,6 +3,7 @@ package se.alipsa.jvmpls.core;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayDeque;
 import java.util.HexFormat;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -64,7 +65,7 @@ public final class StructuralHash {
     appendMatches(structural, ANNOTATION, source);
     appendMatches(structural, TYPE_DECL, source);
     appendMatches(structural, METHOD_SIG, source);
-    appendMatches(structural, FIELD_DECL, source);
+    appendFieldDeclarations(structural, source);
 
     try {
       MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -78,8 +79,70 @@ public final class StructuralHash {
   private static void appendMatches(StringBuilder sb, Pattern pattern, String source) {
     Matcher m = pattern.matcher(source);
     while (m.find()) {
-      // Normalize whitespace to make hash stable across formatting changes
-      sb.append(m.group().replaceAll("\\s+", " ").trim()).append('\n');
+      appendNormalized(sb, m.group());
     }
+  }
+
+  private static void appendFieldDeclarations(StringBuilder sb, String source) {
+    ArrayDeque<BlockKind> blocks = new ArrayDeque<>();
+    for (String line : source.split("\\R", -1)) {
+      if (isFieldDeclaration(line, blocks)) {
+        appendNormalized(sb, line);
+      }
+      updateBlocks(blocks, line);
+    }
+  }
+
+  private static boolean isFieldDeclaration(String line, ArrayDeque<BlockKind> blocks) {
+    if (!FIELD_DECL.matcher(line).matches()) {
+      return false;
+    }
+    boolean insideType = false;
+    for (BlockKind block : blocks) {
+      if (block == BlockKind.TYPE) {
+        insideType = true;
+      } else {
+        return false;
+      }
+    }
+    return insideType;
+  }
+
+  private static void updateBlocks(ArrayDeque<BlockKind> blocks, String line) {
+    BlockKind firstOpenKind = firstOpenKind(line);
+    boolean classifiedFirstOpen = false;
+    for (int i = 0; i < line.length(); i++) {
+      char ch = line.charAt(i);
+      if (ch == '{') {
+        blocks.addLast(classifiedFirstOpen ? BlockKind.OTHER : firstOpenKind);
+        classifiedFirstOpen = true;
+      } else if (ch == '}' && !blocks.isEmpty()) {
+        blocks.removeLast();
+      }
+    }
+  }
+
+  private static BlockKind firstOpenKind(String line) {
+    if (line.indexOf('{') < 0) {
+      return BlockKind.OTHER;
+    }
+    if (TYPE_DECL.matcher(line).find()) {
+      return BlockKind.TYPE;
+    }
+    if (METHOD_SIG.matcher(line).find()) {
+      return BlockKind.EXECUTABLE;
+    }
+    return BlockKind.OTHER;
+  }
+
+  private static void appendNormalized(StringBuilder sb, String text) {
+    // Normalize whitespace to make hash stable across formatting changes
+    sb.append(text.replaceAll("\\s+", " ").trim()).append('\n');
+  }
+
+  private enum BlockKind {
+    TYPE,
+    EXECUTABLE,
+    OTHER
   }
 }

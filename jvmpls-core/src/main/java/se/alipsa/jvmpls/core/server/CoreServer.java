@@ -91,7 +91,8 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
       DependencyGraph graph,
       Executor executor,
       DiagnosticsPublisher publisher) {
-    return create(registry, index, docs, graph, executor, List.of(), currentJdkHome(), publisher);
+    return create(
+        registry, index, docs, graph, executor, List.of(), currentJdkHome(), null, publisher);
   }
 
   public static CoreServer create(
@@ -103,9 +104,27 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
       List<String> classpath,
       Path targetJdkHome,
       DiagnosticsPublisher publisher) {
-    registerExternalProviders(index, classpath, targetJdkHome);
+    return create(
+        registry, index, docs, graph, executor, classpath, targetJdkHome, null, publisher);
+  }
+
+  public static CoreServer create(
+      PluginRegistry registry,
+      SymbolIndex index,
+      DocumentStore docs,
+      DependencyGraph graph,
+      Executor executor,
+      List<String> classpath,
+      Path targetJdkHome,
+      Path workspaceRoot,
+      DiagnosticsPublisher publisher) {
+    registerExternalProviders(index, classpath, targetJdkHome, workspaceRoot);
+    IndexSnapshot snapshot = workspaceRoot != null ? new IndexSnapshot(workspaceRoot) : null;
+    if (snapshot != null) {
+      snapshot.load(index);
+    }
     CoreEngine engine = new CoreEngine(registry, index, docs, graph, executor);
-    return new CoreServer(engine, publisher, executor, false, index, null);
+    return new CoreServer(engine, publisher, executor, false, index, snapshot);
   }
 
   // --- CoreFacade (delegates + publishes diagnostics) -------------------------------------------

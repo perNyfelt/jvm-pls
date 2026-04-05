@@ -32,13 +32,13 @@ final class OpenDocuments {
    * its version. Each change is applied in order; ranged changes are relative to the state after
    * the previous change in the same notification. Returns the final full text.
    *
-   * @throws IllegalStateException if the document is not currently open
+   * @throws IllegalArgumentException if the document is not currently open
    */
   String applyIncrementalChanges(
       String uri, int version, List<TextDocumentContentChangeEvent> changes) {
     DocumentState state = documentsByUri.get(uri);
     if (state == null) {
-      throw new IllegalStateException("No open document for URI: " + uri);
+      throw new IllegalArgumentException("No open document for URI: " + uri);
     }
     String text = state.text();
     for (TextDocumentContentChangeEvent change : changes) {

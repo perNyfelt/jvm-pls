@@ -117,6 +117,7 @@ final class ClasspathCache {
       Files.deleteIfExists(cacheDir.resolve(CATALOG_FILE));
       Files.deleteIfExists(cacheDir.resolve(FINGERPRINT_FILE));
       Files.deleteIfExists(cacheDir.resolve(VERSION_FILE));
+      Files.deleteIfExists(cacheDir);
       LOG.info("Deleted stale classpath cache at " + cacheDir);
     } catch (IOException e) {
       LOG.log(Level.WARNING, "Failed to delete classpath cache", e);
