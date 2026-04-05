@@ -376,12 +376,11 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
             String uri = params.getTextDocument().getUri();
             se.alipsa.jvmpls.core.model.Position corePos =
                 LspTypeConverter.toCore(params.getPosition());
+            Optional<se.alipsa.jvmpls.core.model.Location> declaration =
+                core.definition(uri, corePos);
             return core.references(uri, corePos, true).stream()
                 .filter(location -> uri.equals(location.getUri()))
-                .map(se.alipsa.jvmpls.core.model.Location::getRange)
-                .filter(range -> range != null)
-                .map(LspTypeConverter::toLsp)
-                .map(range -> new DocumentHighlight(range, DocumentHighlightKind.Text))
+                .map(location -> toDocumentHighlight(location, declaration))
                 .toList();
           } catch (RuntimeException e) {
             LOG.log(Level.SEVERE, "Document highlight request failed", e);
@@ -641,5 +640,17 @@ public class JvmPlsTextDocumentService implements TextDocumentService {
       value = value.substring(1, value.length() - 1);
     }
     return value.isBlank() ? null : value;
+  }
+
+  private static DocumentHighlight toDocumentHighlight(
+      se.alipsa.jvmpls.core.model.Location location,
+      Optional<se.alipsa.jvmpls.core.model.Location> declaration) {
+    DocumentHighlight highlight = new DocumentHighlight();
+    highlight.setRange(LspTypeConverter.toLsp(location).getRange());
+    highlight.setKind(
+        declaration.filter(location::equals).isPresent()
+            ? DocumentHighlightKind.Write
+            : DocumentHighlightKind.Text);
+    return highlight;
   }
 }

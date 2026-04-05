@@ -133,9 +133,9 @@ class JvmPlsLanguageServerTest {
     assertTrue(
         completionProvider.getTriggerCharacters().contains("@"),
         "trigger characters should include '@'");
-    assertTrue(
+    assertFalse(
         completionProvider.getTriggerCharacters().contains(":"),
-        "trigger characters should include ':'");
+        "trigger characters should not include ':'");
     assertNotNull(result.getCapabilities().getDeclarationProvider());
     assertNotNull(result.getCapabilities().getHoverProvider());
     assertNotNull(result.getCapabilities().getDocumentHighlightProvider());

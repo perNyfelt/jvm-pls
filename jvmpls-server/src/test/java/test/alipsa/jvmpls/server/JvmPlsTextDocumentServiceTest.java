@@ -21,6 +21,7 @@ import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.DocumentHighlight;
+import org.eclipse.lsp4j.DocumentHighlightKind;
 import org.eclipse.lsp4j.DocumentHighlightParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.FormattingOptions;
@@ -176,15 +177,24 @@ class JvmPlsTextDocumentServiceTest {
   }
 
   @Test
-  void documentHighlight_filtersReferencesToCurrentFile() throws Exception {
+  void documentHighlight_filtersReferencesToCurrentFileAndMarksDeclarationWrite()
+      throws Exception {
     FakeCoreFacade core = new FakeCoreFacade();
+    se.alipsa.jvmpls.core.model.Location declaration =
+        new se.alipsa.jvmpls.core.model.Location(
+            TEST_URI,
+            new Range(
+                new se.alipsa.jvmpls.core.model.Position(1, 0),
+                new se.alipsa.jvmpls.core.model.Position(1, 4)));
+    core.definitionResult = Optional.of(declaration);
     core.referencesResult =
         List.of(
+            declaration,
             new se.alipsa.jvmpls.core.model.Location(
                 TEST_URI,
                 new Range(
-                    new se.alipsa.jvmpls.core.model.Position(1, 0),
-                    new se.alipsa.jvmpls.core.model.Position(1, 4))),
+                    new se.alipsa.jvmpls.core.model.Position(2, 0),
+                    new se.alipsa.jvmpls.core.model.Position(2, 4))),
             new se.alipsa.jvmpls.core.model.Location(
                 "file:///Other.java",
                 new Range(
@@ -199,7 +209,9 @@ class JvmPlsTextDocumentServiceTest {
                     new TextDocumentIdentifier(TEST_URI), new Position(0, 0)))
             .get(5, TimeUnit.SECONDS);
 
-    assertEquals(1, highlights.size());
+    assertEquals(2, highlights.size());
+    assertEquals(DocumentHighlightKind.Write, highlights.getFirst().getKind());
+    assertEquals(DocumentHighlightKind.Text, highlights.get(1).getKind());
     assertEquals(1, highlights.getFirst().getRange().getStart().getLine());
   }
 

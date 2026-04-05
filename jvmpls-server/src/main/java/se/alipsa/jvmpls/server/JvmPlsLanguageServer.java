@@ -122,7 +122,7 @@ public final class JvmPlsLanguageServer implements LanguageServer, LanguageClien
     capabilities.setTextDocumentSync(syncOptions);
 
     CompletionOptions completionOptions = new CompletionOptions();
-    completionOptions.setTriggerCharacters(List.of(".", "@", ":"));
+    completionOptions.setTriggerCharacters(List.of(".", "@"));
     capabilities.setCompletionProvider(completionOptions);
 
     capabilities.setDefinitionProvider(true);
