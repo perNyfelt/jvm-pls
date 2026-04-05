@@ -95,8 +95,21 @@
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <mainClass>se.alipsa.jvmpls.server.Main</mainClass>
+                  <manifestEntries>
+                    <Implementation-Title>${project.name}</Implementation-Title>
+                    <Implementation-Version>${project.version}</Implementation-Version>
+                    <Implementation-Vendor>${project.organization.name}</Implementation-Vendor>
+                  </manifestEntries>
                 </transformer>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+                <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+                  <resource>LICENSE</resource>
+                  <file>${maven.multiModuleProjectDirectory}/LICENSE</file>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+                  <resource>NOTICE</resource>
+                  <file>${maven.multiModuleProjectDirectory}/NOTICE</file>
+                </transformer>
               </transformers>
             </configuration>
           </execution>

@@ -2,6 +2,8 @@ package se.alipsa.jvmpls.server;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -17,55 +19,87 @@ public final class Main {
   private Main() {}
 
   public static void main(String[] args) {
+    System.exit(run(args, System.in, System.out, System.err));
+  }
+
+  public static int run(String[] args, InputStream in, OutputStream out, OutputStream err) {
+    ParsedArgs parsed = parseArgs(args);
+    PrintStream stdout = new PrintStream(out, true, StandardCharsets.UTF_8);
+    PrintStream stderr = new PrintStream(err, true, StandardCharsets.UTF_8);
+    return switch (parsed.mode()) {
+      case VERSION -> {
+        stdout.println(ServerMetadata.NAME + " " + ServerMetadata.VERSION);
+        yield 0;
+      }
+      case HELP -> {
+        printUsage(stdout);
+        yield 0;
+      }
+      case INVALID -> {
+        stderr.println(parsed.errorMessage());
+        printUsage(stdout);
+        yield 1;
+      }
+      case STDIO -> startStdio(in, out);
+    };
+  }
+
+  public static ParsedArgs parseArgs(String[] args) {
     for (String arg : args) {
       switch (arg) {
         case "--version" -> {
-          System.out.println(ServerMetadata.NAME + " " + ServerMetadata.VERSION);
-          return;
+          return new ParsedArgs(Mode.VERSION, null);
         }
         case "--help" -> {
-          printUsage();
-          return;
+          return new ParsedArgs(Mode.HELP, null);
         }
-        case "--stdio" -> {} // default, no-op
+        case "--stdio" -> {
+          // default, no-op
+        }
         default -> {
-          System.err.println("Unknown option: " + arg);
-          printUsage();
-          System.exit(1);
+          return new ParsedArgs(Mode.INVALID, "Unknown option: " + arg);
         }
       }
     }
-
-    startStdio(System.in, System.out);
+    return new ParsedArgs(Mode.STDIO, null);
   }
 
-  static void startStdio(InputStream in, OutputStream out) {
+  static int startStdio(InputStream in, OutputStream out) {
     try {
       JvmPlsLanguageServer server = new JvmPlsLanguageServer();
       Launcher<LanguageClient> launcher = LSPLauncher.createServerLauncher(server, in, out);
       server.connect(launcher.getRemoteProxy());
       launcher.startListening().get();
-      System.exit(server.getExitCode());
+      return server.getExitCode();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       LOG.log(Level.SEVERE, "LSP server interrupted while listening on stdio", e);
-      System.exit(1);
+      return 1;
     } catch (ExecutionException e) {
       Throwable cause = e.getCause() != null ? e.getCause() : e;
       LOG.log(Level.SEVERE, "LSP server stopped unexpectedly while serving stdio", cause);
-      System.exit(1);
+      return 1;
     } catch (RuntimeException e) {
       LOG.log(Level.SEVERE, "Failed to start or run the LSP server over stdio", e);
-      System.exit(1);
+      return 1;
     }
   }
 
-  private static void printUsage() {
-    System.out.println("Usage: java -jar " + ServerMetadata.STANDALONE_JAR + " [options]");
-    System.out.println();
-    System.out.println("Options:");
-    System.out.println("  --stdio    Launch LSP server over stdin/stdout (default)");
-    System.out.println("  --version  Print version and exit");
-    System.out.println("  --help     Print this help and exit");
+  private static void printUsage(PrintStream out) {
+    out.println("Usage: java -jar " + ServerMetadata.STANDALONE_JAR + " [options]");
+    out.println();
+    out.println("Options:");
+    out.println("  --stdio    Launch LSP server over stdin/stdout (default)");
+    out.println("  --version  Print version and exit");
+    out.println("  --help     Print this help and exit");
   }
+
+  public enum Mode {
+    STDIO,
+    VERSION,
+    HELP,
+    INVALID
+  }
+
+  public record ParsedArgs(Mode mode, String errorMessage) {}
 }

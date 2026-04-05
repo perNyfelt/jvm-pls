@@ -9,6 +9,9 @@
 
   <artifactId>jvmpls-bench</artifactId>
   <description>Performance benchmarks for jvm-pls. Run manually with -pl jvmpls-bench -Pbench test</description>
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
   <dependencies>
     <dependency>
       <groupId>se.alipsa.jvmpls</groupId>

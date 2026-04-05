@@ -10,10 +10,10 @@ Use this module when you need a real LSP server process. If you are embedding `j
 
 ## Build And Run
 
-Build the standalone shaded JAR:
+Build the server module and standalone shaded JAR:
 
 ```bash
-mvn -pl jvmpls-server -am package
+mvn -pl jvmpls-server -am package -DskipTests
 ```
 
 Run the server over stdio:
@@ -28,6 +28,11 @@ Other supported flags:
 java -jar jvmpls-server/target/jvmpls-server-1.0.0-SNAPSHOT-standalone.jar --version
 java -jar jvmpls-server/target/jvmpls-server-1.0.0-SNAPSHOT-standalone.jar --help
 ```
+
+## Published Outputs
+
+- `jvmpls-server-<version>.jar`: standard embeddable artifact
+- `jvmpls-server-<version>-standalone.jar`: shaded standalone artifact with merged ServiceLoader resources, manifest metadata, `LICENSE`, and `NOTICE`
 
 ## What It Provides
 
