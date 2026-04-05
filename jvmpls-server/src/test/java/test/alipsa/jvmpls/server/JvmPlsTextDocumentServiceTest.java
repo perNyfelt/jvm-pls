@@ -20,10 +20,10 @@ import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
+import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentHighlightKind;
 import org.eclipse.lsp4j.DocumentHighlightParams;
-import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -177,8 +177,7 @@ class JvmPlsTextDocumentServiceTest {
   }
 
   @Test
-  void documentHighlight_filtersReferencesToCurrentFileAndMarksDeclarationWrite()
-      throws Exception {
+  void documentHighlight_filtersReferencesToCurrentFileAndMarksDeclarationWrite() throws Exception {
     FakeCoreFacade core = new FakeCoreFacade();
     se.alipsa.jvmpls.core.model.Location declaration =
         new se.alipsa.jvmpls.core.model.Location(
