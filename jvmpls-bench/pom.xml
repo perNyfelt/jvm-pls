@@ -11,6 +11,7 @@
   <description>Performance benchmarks for jvm-pls. Run manually with -pl jvmpls-bench -Pbench test</description>
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>
+    <gpg.skip>true</gpg.skip>
   </properties>
   <dependencies>
     <dependency>

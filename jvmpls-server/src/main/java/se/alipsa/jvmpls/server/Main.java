@@ -22,6 +22,16 @@ public final class Main {
     System.exit(run(args, System.in, System.out, System.err));
   }
 
+  /**
+   * Execute the command-line entry point without terminating the JVM. This is used by {@link
+   * #main(String[])} and by tests that need to verify CLI behavior.
+   *
+   * @param args CLI arguments
+   * @param in stdin source for stdio mode
+   * @param out stdout sink
+   * @param err stderr sink
+   * @return the process-style exit code that {@link #main(String[])} would use
+   */
   public static int run(String[] args, InputStream in, OutputStream out, OutputStream err) {
     ParsedArgs parsed = parseArgs(args);
     PrintStream stdout = new PrintStream(out, true, StandardCharsets.UTF_8);
@@ -44,6 +54,14 @@ public final class Main {
     };
   }
 
+  /**
+   * Parse CLI arguments into a transport-neutral mode description. The parser is intentionally
+   * small: `--stdio` is the default, `--help` and `--version` are terminal modes, and any unknown
+   * option is reported as invalid.
+   *
+   * @param args CLI arguments
+   * @return parsed arguments describing the requested execution mode
+   */
   public static ParsedArgs parseArgs(String[] args) {
     for (String arg : args) {
       switch (arg) {
@@ -94,6 +112,7 @@ public final class Main {
     out.println("  --help     Print this help and exit");
   }
 
+  /** Supported top-level CLI modes for the standalone server entry point. */
   public enum Mode {
     STDIO,
     VERSION,
@@ -101,5 +120,9 @@ public final class Main {
     INVALID
   }
 
+  /**
+   * Parsed CLI result containing the selected mode and, for invalid input, the message that should
+   * be shown to the user.
+   */
   public record ParsedArgs(Mode mode, String errorMessage) {}
 }
