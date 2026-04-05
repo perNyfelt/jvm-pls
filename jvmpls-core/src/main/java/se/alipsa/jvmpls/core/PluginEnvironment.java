@@ -11,4 +11,9 @@ public interface PluginEnvironment {
   List<String> classpath(); // current workspace classpath (when available)
 
   void log(String level, String message, Throwable t);
+
+  /** Returns the current cancellation token for cooperative cancellation checking. */
+  default CancellationToken cancellationToken() {
+    return CancellationToken.NONE;
+  }
 }

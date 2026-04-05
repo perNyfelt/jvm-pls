@@ -102,4 +102,8 @@ public interface SymbolReporter {
             + " -> "
             + calleeFqn);
   }
+
+  default void reportDependency(String targetUri) {
+    LOG.fine("Dependency reporting is not implemented by this SymbolReporter for " + targetUri);
+  }
 }

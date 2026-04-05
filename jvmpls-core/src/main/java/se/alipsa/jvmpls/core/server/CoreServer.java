@@ -20,22 +20,31 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
 
   private final CoreEngine engine;
   private final DiagnosticsPublisher publisher;
+  private final SymbolIndex index;
+  private final IndexSnapshot snapshot;
 
   // for lifecycle management if we created the executor
   private final Executor executor;
   private final boolean ownsExecutor;
 
   private CoreServer(
-      CoreEngine engine, DiagnosticsPublisher publisher, Executor executor, boolean ownsExecutor) {
+      CoreEngine engine,
+      DiagnosticsPublisher publisher,
+      Executor executor,
+      boolean ownsExecutor,
+      SymbolIndex index,
+      IndexSnapshot snapshot) {
     this.engine = Objects.requireNonNull(engine);
     this.publisher = Objects.requireNonNullElse(publisher, DiagnosticsPublisher.NO_OP);
     this.executor = executor;
     this.ownsExecutor = ownsExecutor;
+    this.index = index;
+    this.snapshot = snapshot;
   }
 
   /** Build a CoreServer with sensible defaults and plugins discovered via ServiceLoader. */
   public static CoreServer createDefault(DiagnosticsPublisher publisher) {
-    return createDefault(publisher, List.of(), currentJdkHome());
+    return createDefault(publisher, List.of(), currentJdkHome(), null);
   }
 
   /**
@@ -43,18 +52,33 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
    */
   public static CoreServer createDefault(
       DiagnosticsPublisher publisher, List<String> classpath, Path targetJdkHome) {
+    return createDefault(publisher, classpath, targetJdkHome, null);
+  }
+
+  /** Build a CoreServer with explicit classpath/JDK/workspace configuration. */
+  public static CoreServer createDefault(
+      DiagnosticsPublisher publisher,
+      List<String> classpath,
+      Path targetJdkHome,
+      Path workspaceRoot) {
     SymbolIndex index = new SymbolIndex();
     DocumentStore docs = new DocumentStore();
     DependencyGraph graph = new DependencyGraph();
     Executor executor = Executors.newVirtualThreadPerTaskExecutor();
     boolean owns = true;
 
-    registerExternalProviders(index, classpath, targetJdkHome);
+    registerExternalProviders(index, classpath, targetJdkHome, workspaceRoot);
     PluginEnvironment env = new DefaultPluginEnvironment(index, executor, classpath);
     PluginRegistry registry = new PluginRegistry(env);
 
+    // Load snapshot for warm restart if workspace root is available
+    IndexSnapshot snapshot = workspaceRoot != null ? new IndexSnapshot(workspaceRoot) : null;
+    if (snapshot != null) {
+      snapshot.load(index);
+    }
+
     CoreEngine engine = new CoreEngine(registry, index, docs, graph, executor);
-    return new CoreServer(engine, publisher, executor, owns);
+    return new CoreServer(engine, publisher, executor, owns, index, snapshot);
   }
 
   /**
@@ -67,7 +91,8 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
       DependencyGraph graph,
       Executor executor,
       DiagnosticsPublisher publisher) {
-    return create(registry, index, docs, graph, executor, List.of(), currentJdkHome(), publisher);
+    return create(
+        registry, index, docs, graph, executor, List.of(), currentJdkHome(), null, publisher);
   }
 
   public static CoreServer create(
@@ -79,9 +104,27 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
       List<String> classpath,
       Path targetJdkHome,
       DiagnosticsPublisher publisher) {
-    registerExternalProviders(index, classpath, targetJdkHome);
+    return create(
+        registry, index, docs, graph, executor, classpath, targetJdkHome, null, publisher);
+  }
+
+  public static CoreServer create(
+      PluginRegistry registry,
+      SymbolIndex index,
+      DocumentStore docs,
+      DependencyGraph graph,
+      Executor executor,
+      List<String> classpath,
+      Path targetJdkHome,
+      Path workspaceRoot,
+      DiagnosticsPublisher publisher) {
+    registerExternalProviders(index, classpath, targetJdkHome, workspaceRoot);
+    IndexSnapshot snapshot = workspaceRoot != null ? new IndexSnapshot(workspaceRoot) : null;
+    if (snapshot != null) {
+      snapshot.load(index);
+    }
     CoreEngine engine = new CoreEngine(registry, index, docs, graph, executor);
-    return new CoreServer(engine, publisher, executor, false);
+    return new CoreServer(engine, publisher, executor, false, index, snapshot);
   }
 
   // --- CoreFacade (delegates + publishes diagnostics) -------------------------------------------
@@ -192,14 +235,23 @@ public final class CoreServer implements CoreFacade, AutoCloseable {
 
   @Override
   public void close() {
+    if (snapshot != null && index != null) {
+      try {
+        snapshot.save(index);
+      } catch (Exception e) {
+        java.util.logging.Logger.getLogger(CoreServer.class.getName())
+            .log(java.util.logging.Level.WARNING, "Failed to save index snapshot on shutdown", e);
+      }
+    }
     if (ownsExecutor && executor instanceof ExecutorService es) {
       es.shutdown();
     }
   }
 
   private static void registerExternalProviders(
-      SymbolIndex index, List<String> classpath, Path targetJdkHome) {
-    SymbolProviderContext context = new SymbolProviderContext(classpath, targetJdkHome);
+      SymbolIndex index, List<String> classpath, Path targetJdkHome, Path workspaceRoot) {
+    SymbolProviderContext context =
+        new SymbolProviderContext(classpath, targetJdkHome, workspaceRoot);
     ServiceLoader<SymbolProviderFactory> loader = ServiceLoader.load(SymbolProviderFactory.class);
     for (SymbolProviderFactory factory : loader) {
       for (SymbolProvider provider : factory.createProviders(context)) {

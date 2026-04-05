@@ -16,6 +16,7 @@ import com.sun.source.util.*;
 import se.alipsa.jvmpls.core.CoreQuery;
 import se.alipsa.jvmpls.core.JvmLangPlugin;
 import se.alipsa.jvmpls.core.PluginEnvironment;
+import se.alipsa.jvmpls.core.StructuralHash;
 import se.alipsa.jvmpls.core.SymbolReporter;
 import se.alipsa.jvmpls.core.model.*;
 import se.alipsa.jvmpls.core.model.Diagnostic;
@@ -33,6 +34,12 @@ public final class JavaPlugin implements JvmLangPlugin {
   private final Map<String, Set<String>> typesByUri = new ConcurrentHashMap<>();
   private volatile CoreQuery coreQuery;
   private volatile TypeResolver typeResolver;
+
+  /** Per-file structural hash for detecting body-only vs structural changes. */
+  private final Map<String, String> structuralHashByUri = new ConcurrentHashMap<>();
+
+  /** Cached diagnostics from the last successful index, keyed by file URI. */
+  private final Map<String, List<Diagnostic>> cachedDiagsByUri = new ConcurrentHashMap<>();
 
   private static final java.util.regex.Pattern PKG =
       Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
@@ -63,6 +70,17 @@ public final class JavaPlugin implements JvmLangPlugin {
   @Override
   public List<Diagnostic> index(String fileUri, String content, SymbolReporter reporter) {
     contentByUri.put(fileUri, content);
+
+    // Check structural hash: if only method bodies changed, skip full re-parse
+    String newHash = StructuralHash.compute(content);
+    String oldHash = structuralHashByUri.put(fileUri, newHash);
+    if (oldHash != null && oldHash.equals(newHash)) {
+      List<Diagnostic> cached = cachedDiagsByUri.get(fileUri);
+      if (cached != null) {
+        return cached;
+      }
+    }
+
     clearHierarchy(fileUri);
     var out = new ArrayList<Diagnostic>();
 
@@ -260,6 +278,7 @@ public final class JavaPlugin implements JvmLangPlugin {
             },
             null);
         reportExecutableReferences(fileUri, cu, pkg, visibleImports, reporter, trees);
+        reportFileDependencies(fileUri, cu, pkg, visibleImports, reporter);
       }
       try {
         task.analyze();
@@ -285,6 +304,7 @@ public final class JavaPlugin implements JvmLangPlugin {
               id(),
               "parse"));
     }
+    cachedDiagsByUri.put(fileUri, List.copyOf(out));
     return out;
   }
 
@@ -362,6 +382,8 @@ public final class JavaPlugin implements JvmLangPlugin {
   @Override
   public void forget(String fileUri) {
     contentByUri.remove(fileUri);
+    structuralHashByUri.remove(fileUri);
+    cachedDiagsByUri.remove(fileUri);
     clearHierarchy(fileUri);
   }
 
@@ -1353,6 +1375,60 @@ public final class JavaPlugin implements JvmLangPlugin {
       }
       reporter.reportReference(imported, new Location(fileUri, toRange(cu, importTree, trees)));
     }
+  }
+
+  /**
+   * Report file-level dependencies by resolving imports and supertypes to workspace file URIs. This
+   * populates the DependencyGraph so incremental invalidation works correctly.
+   */
+  private void reportFileDependencies(
+      String fileUri,
+      CompilationUnitTree cu,
+      String pkg,
+      List<String> visibleImports,
+      SymbolReporter reporter) {
+    CoreQuery core = coreQuery;
+    if (core == null) {
+      return;
+    }
+    Set<String> reported = new HashSet<>();
+    // Report dependencies from imports
+    for (ImportTree importTree : cu.getImports()) {
+      String imported = importTree.getQualifiedIdentifier().toString();
+      if (imported.endsWith(".*")) {
+        continue;
+      }
+      if (importTree.isStatic()) {
+        // Static import: strip member name to get the type FQN
+        int lastDot = imported.lastIndexOf('.');
+        if (lastDot > 0) {
+          imported = imported.substring(0, lastDot);
+        }
+      }
+      reportDependencyForFqn(imported, fileUri, reporter, core, reported);
+    }
+    // Report dependencies from extends/implements
+    Set<String> types = typesByUri.get(fileUri);
+    if (types != null) {
+      for (String typeFqn : types) {
+        List<String> supertypes = directSupertypesByType.get(typeFqn);
+        if (supertypes != null) {
+          for (String superFqn : supertypes) {
+            reportDependencyForFqn(superFqn, fileUri, reporter, core, reported);
+          }
+        }
+      }
+    }
+  }
+
+  private static void reportDependencyForFqn(
+      String fqn, String fileUri, SymbolReporter reporter, CoreQuery core, Set<String> reported) {
+    core.findByFqn(fqn)
+        .map(SymbolInfo::getLocation)
+        .map(Location::getUri)
+        .filter(depUri -> !depUri.equals(fileUri))
+        .filter(reported::add)
+        .ifPresent(reporter::reportDependency);
   }
 
   private void reportHierarchyReferences(

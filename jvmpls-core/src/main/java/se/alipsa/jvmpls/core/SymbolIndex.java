@@ -319,6 +319,16 @@ public final class SymbolIndex implements CoreQuery {
         .toList();
   }
 
+  /** Return all file URIs that have declarations in this index (for snapshot serialization). */
+  public List<String> allFileUris() {
+    return List.copyOf(fileToDecls.keySet());
+  }
+
+  /** Return all direct supertype relationships (for snapshot serialization). */
+  public Map<String, List<String>> allDirectSupertypes() {
+    return Map.copyOf(directSupertypesByType);
+  }
+
   public List<SymbolInfo> search(String query, int limit) {
     if (query == null || query.isBlank() || limit <= 0) {
       return List.of();

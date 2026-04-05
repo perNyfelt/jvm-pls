@@ -62,6 +62,11 @@ final class ScannedTypeCatalog {
     return byFqn.isEmpty();
   }
 
+  /** Return all descriptors in the catalog (for cache serialization). */
+  List<ScannedTypeDescriptor> allDescriptors() {
+    return List.copyOf(byFqn.values());
+  }
+
   static final class Builder {
 
     private final Map<String, ScannedTypeDescriptor> byFqn = new LinkedHashMap<>();
